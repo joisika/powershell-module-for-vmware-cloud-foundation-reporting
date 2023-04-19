@@ -17,6 +17,8 @@
 ### Platforms
 
 - [VMware Cloud Foundation][vmware-cloud-foundation] 4.2.1 or later
+    - vSAN ReadyNodes
+    - DellEMC VxRail
 
 ### Operating Systems
 
@@ -34,7 +36,7 @@
 - [`VMware.PowerCLI`][module-vmware-powercli] 12.7.0 or later
 - [`VMware.vSphere.SsoAdmin`][module-vmware-vsphere-ssoadmin] 1.3.8 or later
 - [`PowerVCF`][module-powervcf] 2.2.0 or later
-- [`PowerValidatedSolutions`][module-powervalidatedsolutions] 2.0.0 or later
+- [`PowerValidatedSolutions`][module-powervalidatedsolutions] 2.0.1 or later
 
 ### Browsers
 
@@ -55,15 +57,19 @@ Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
 Install-Module -Name VMware.PowerCLI -MinimumVersion 12.7.0
 Install-Module -Name VMware.vSphere.SsoAdmin -MinimumVersion 1.3.8
 Install-Module -Name PowerVCF -MinimumVersion 2.2.0
-Install-Module -Name PowerValidatedSolutions -MinimumVersion 2.0.0
+Install-Module -Name PowerValidatedSolutions -MinimumVersion 2.0.1
 Install-Module -Name VMware.CloudFoundation.Reporting
 ```
 
-If using VMware Photon OS, import the modules before proceeding:
+If using PowerShell Core, import the modules before proceeding:
 
 For example:
 
 ```powershell
+Import-Module -Name VMware.PowerCLI
+Import-Module -Name VMware.vSphere.SsoAdmin
+Import-Module -Name PowerVCF
+Import-Module -Name PowerValidatedSolutions
 Import-Module -Name VMware.CloudFoundation.Reporting
 ```
 
@@ -128,7 +134,7 @@ Each cmdlet may provide one or more usage examples. Many of the cmdlets require 
 
 The cmdlets in this module, and its dependencies, return data from multple platform components. The credentials for most of the platform components are returned to the cmdlets by retrieving credentials from the SDDC Manager inventory and using these credentials, as needed, within cmdlet operations.
 
-For the best expereince, for cmdlets that connect to SDDC Manager, use the VMware Cloud Foundation API user `admin@local` or an account with the **Cloud Administrator** role in SDDC Manager (e.g., `administrator@vsphere.local`).
+For the best expereince, for cmdlets that connect to SDDC Manager, use the VMware Cloud Foundation API user `admin@local` or an account with the **ADMIN** role in SDDC Manager (e.g., `administrator@vsphere.local`).
 
 ## Getting Started with Reports
 
@@ -522,7 +528,7 @@ The `Invoke-VcfPasswordPolicyReport` cmdlet generates a password policy report. 
 3. Generate the report by running the command in the PowerShell console.
 
     ```powershell
-    Invoke-VcfPasswordPolicy -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerUser -sddcManagerPass $sddcManagerPass -reportPath $reportPath -allDomains
+    Invoke-VcfPasswordPolicy -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerUser -sddcManagerPass $sddcManagerPass -sddcRootPass $sddcManagerRootPass -reportPath $reportPath -allDomains
     ```
 
 4. Review the generated HTML report.
@@ -560,7 +566,7 @@ The `Invoke-VcfPasswordPolicyReport` cmdlet generates a password policy report. 
 3. Generate the report by running the command in the PowerShell console.
 
     ```powershell
-    Invoke-VcfPasswordPolicy -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerUser -sddcManagerPass $sddcManagerPass -reportPath $reportPath -workloadDomain $workloadDomain
+    Invoke-VcfPasswordPolicy -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerUser -sddcManagerPass $sddcManagerPass -sddcRootPass $sddcManagerRootPass -reportPath $reportPath -workloadDomain $workloadDomain
     ```
 
 4. Review the generated HTML report.
@@ -679,20 +685,6 @@ The upgrade precheck report, initiates an upgrade precheck of a workload domain 
 
 4. Review the generated HTML report.
 
-## Known Issues
-
-- The `Invoke-VcfPasswordPolicy` cmdlet fails to return collected information for the vCenter Server Password Policy Configuration when using PowerShell Core on Linux
-
-    ```powershell
-    [00-00-0000_00:00:00] INFO Collecting vCenter Server Password Policy Configuration for VMware Cloud Foundation instance (sfo-vcf01.sfo.rainpole.io).
-
-    Connect-SsoAdminServer: One or more errors occurred. (The SSL connection could not be established, see inner exception.)
-
-    Test-SSOAuthentication: Unable to authenticate to Single-Sign-On Server (sfo-w01-vc01.sfo.rainpole.io), check credentials: PRE_VALIDATION_FAILED
-    ```
-
-    Workaround: Use PowerShell Core on Windows.
-
 ## Contributing
 
 The project team welcomes contributions from the community. Before you start working with PowerValidatedSolutions, please
@@ -706,7 +698,16 @@ For more detailed information, refer to the [contribution guidelines][contributi
 
 This PowerShell module is not supported by VMware Support.
 
-If you discover a bug or would like to suggest an enhancement, please [open an issue][issues].
+We welcome you to use the GitHub [issues][issues] tracker to report bugs or suggest features and enhancements.
+
+When filing an issue, please check existing open, or recently closed, issues to make sure someone else hasn't already
+reported the issue.
+
+Please try to include as much information as you can. Details like these are incredibly useful:
+
+- A reproducible test case or series of steps.
+- Any modifications you've made relevant to the bug.
+- Anything unusual about your environment or deployment.
 
 ## License
 

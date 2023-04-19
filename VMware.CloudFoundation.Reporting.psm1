@@ -41,6 +41,21 @@ if ($PSEdition -eq 'Desktop') {
 }
 
 #######################################################################################################################
+#############################  J S O N   O U T P U T   F I L E N A M E S   ############################################
+
+
+Set-Variable -Name "backupJsonSuffix" -value "backup-status.json" -scope global
+Set-Variable -Name "nsxtTransportJsonSuffix" -value "nsxttransportnode-status.json" -scope global
+Set-Variable -Name "nsxttntunnelJsonSuffix" -value "nsxttntunnel-status.json" -scope global
+Set-Variable -Name "nsxttier0bgpJsonSuffix" -value "nsxttier0bgp-status.json" -scope global
+Set-Variable -Name "snapshotJsonSuffix" -value "snapshot-status.json" -scope global
+Set-Variable -Name "localuserexpiryJsonSuffix" -value "localuserexpiry-status.json" -scope global
+Set-Variable -Name "storageCapacityHealthJsonSuffix" -value "storagecapacityhealth-status.json" -scope global
+Set-Variable -Name "componentConnectivityHealthNonSOSJsonSuffix" -value "componentconnectivityhealthnonsos-status.json" -scope global
+Set-Variable -Name "nsxtCombinedHealthNonSOSJsonSuffix" -value "nsxtcombinedhealthnonsos-status.json" -scope global
+
+
+#######################################################################################################################
 #############################  C O M B I N E D   O P E R A T I O N S   F U N C T I O N S   ############################
 
 Function Invoke-VcfHealthReport {
@@ -52,15 +67,15 @@ Function Invoke-VcfHealthReport {
         The Invoke-VcfHealthReport provides a single cmdlet to perform health checks across a VMware Cloud Foundation instance.
 
         .EXAMPLE
-        Invoke-VcfHealthReport -sddcManagerFqdn sfo-vcf01.sfo.rainpole.io -sddcManagerUser admin@local -sddcManagerPass VMw@re1!VMw@re1! -sddcManagerRootPass VMw@re1! -reportPath F:\Reporting -allDomains
+        Invoke-VcfHealthReport -sddcManagerFqdn sfo-vcf01.sfo.rainpole.io -sddcManagerUser admin@local -sddcManagerPass VMw@re1!VMw@re1! -sddcManagerLocalUser vcf -sddcManagerLocalPass VMw@re1! -reportPath F:\Reporting -allDomains
         This example runs a health check across a VMware Cloud Foundation instance.
 
         .EXAMPLE
-        Invoke-VcfHealthReport -sddcManagerFqdn sfo-vcf01.sfo.rainpole.io -sddcManagerUser admin@local -sddcManagerPass VMw@re1!VMw@re1! -sddcManagerRootPass VMw@re1! -reportPath F:\Reporting -workloadDomain sfo-w01
+        Invoke-VcfHealthReport -sddcManagerFqdn sfo-vcf01.sfo.rainpole.io -sddcManagerUser admin@local -sddcManagerPass VMw@re1!VMw@re1! -sddcManagerLocalUser vcf -sddcManagerLocalPass VMw@re1! -reportPath F:\Reporting -workloadDomain sfo-w01
         This example runs a health check for a specific Workload Domain within a VMware Cloud Foundation instance.
 
         .EXAMPLE
-        Invoke-VcfHealthReport -sddcManagerFqdn sfo-vcf01.sfo.rainpole.io -sddcManagerUser admin@local -sddcManagerPass VMw@re1!VMw@re1! -sddcManagerRootPass VMw@re1! -reportPath F:\Reporting -allDomains -failureOnly
+        Invoke-VcfHealthReport -sddcManagerFqdn sfo-vcf01.sfo.rainpole.io -sddcManagerUser admin@local -sddcManagerPass VMw@re1!VMw@re1! -sddcManagerLocalUser vcf -sddcManagerLocalPass VMw@re1! -reportPath F:\Reporting -allDomains -failureOnly
         This example runs a health check across a VMware Cloud Foundation instance but only ouputs issues to the HTML report.
     #>
 
@@ -68,7 +83,8 @@ Function Invoke-VcfHealthReport {
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerFqdn,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerUser,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerPass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerRootPass,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerLocalUser,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerLocalPass,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$reportPath,
         [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
         [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
@@ -94,7 +110,7 @@ Function Invoke-VcfHealthReport {
                     $workflowMessage = "Workload Domain ($workloadDomain)"
                     $commandSwitch = "-workloadDomain $workloadDomain"
                 }
-                if ($PsBoundParameters.ContainsKey('failureOnly')) { 
+                if ($PsBoundParameters.ContainsKey('failureOnly')) {
                     $failureOnlySwitch = " -failureOnly"
                 }
 
@@ -103,19 +119,23 @@ Function Invoke-VcfHealthReport {
                 Write-LogMessage -Type INFO -Message "Setting up the log file to path $logfile."
                 Write-LogMessage -Type INFO -Message "Setting up report folder and report $reportName."
                 Write-LogMessage -Type INFO -Message "Running an SoS Health Check for $workflowMessage, process takes time."
-                $jsonFilePath = Invoke-Expression "Request-SoSHealthJson -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -rootPass $sddcManagerRootPass -reportPath $reportFolder $($commandSwitch)"
+                $jsonFilePath = Invoke-Expression "Request-SoSHealthJson -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -reportPath $reportFolder $($commandSwitch)"
 
                 # Generating the Service Health Data Using the SoS Data
                 Write-LogMessage -Type INFO -Message "Generating the Service Health Report using the SoS output for $workflowMessage."
                 $serviceHtml = Invoke-Expression "Publish-ServiceHealth -json $jsonFilePath -html $($failureOnlySwitch)"; $reportData += $serviceHtml
 
-                # Generating the Connectivity Health Data Using SoS Data and Supplimental PowerShell Request Functions
+                # Generating the Version Health Data Using the SoS Data
+                Write-LogMessage -Type INFO -Message "Generating the Version Health Report using the SoS output for $workflowMessage."
+                $versionHtml = Invoke-Expression "Publish-VersionHealth -json $jsonFilePath -html $($failureOnlySwitch)"; $reportData += $versionHtml
+
+                # Generating the Connectivity Health Data Using SoS Data and Supplemental PowerShell Request Functions
                 Write-LogMessage -Type INFO -Message "Generating the Connectivity Health Report using the SoS output for $workflowMessage."
                 $componentConnectivityHtml = Invoke-Expression "Publish-ComponentConnectivityHealth -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -json $jsonFilePath $($commandSwitch) $($failureOnlySwitch)"; $reportData += $componentConnectivityHtml
 
-                # Generating the Password Expiry Health Data Using PowerShell Request Functions
+                # Generating the Password Expiry Health Data Using the SoS Data
                 Write-LogMessage -Type INFO -Message "Generating the Password Expiry Report for $workflowMessage."
-                $localPasswordHtml = Invoke-Expression "Publish-LocalUserExpiry -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -sddcRootPass $sddcManagerRootPass $($commandSwitch) $($failureOnlySwitch)"; $reportData += $localPasswordHtml
+                $passwordHtml = Invoke-Expression "Publish-PasswordHealth -json $jsonFilePath -html $($failureOnlySwitch)"; $reportData += $passwordHtml
 
                 # Generating the Certificate Health Data Using the SoS Data
                 Write-LogMessage -Type INFO -Message "Generating the Certificate Health Report using the SoS output for $workflowMessage."
@@ -136,7 +156,7 @@ Function Invoke-VcfHealthReport {
                 # Generating the NTP Health Data Using the SoS Data
                 Write-LogMessage -Type INFO -Message "Generating the NTP Health Report using the SoS output for $workflowMessage."
                 $ntpHtml = Invoke-Expression "Publish-NtpHealth -json $jsonFilePath -html $($failureOnlySwitch)"; $reportData += $ntpHtml
-                
+
                 # Generating the vCenter Server Health Data Using the SoS Data
                 Write-LogMessage -Type INFO -Message "Generating the vCenter Server Health Report using the SoS output for $workflowMessage."
                 $vcenterHtml = Invoke-Expression "Publish-VcenterHealth -json $jsonFilePath -html $($failureOnlySwitch)"; $reportData += $vcenterHtml
@@ -160,8 +180,8 @@ Function Invoke-VcfHealthReport {
                 # Generating the vSAN Storage Policy Health Data Using the SoS Data
                 Write-LogMessage -Type INFO -Message "Generating the vSAN Storage Policy Health Report using the SoS output for $workflowMessage."
                 $vsanPolicyHtml = Invoke-Expression "Publish-VsanStoragePolicy -json $jsonFilePath -html $($failureOnlySwitch)"; $reportData += $vsanPolicyHtml
-                
-                # Generating the NSX Manager Health Data Using SoS output and Supplimental PowerShell Request Functions
+
+                # Generating the NSX Manager Health Data Using SoS output and Supplemental PowerShell Request Functions
                 Write-LogMessage -Type INFO -Message "Generating the NSX-T Data Center Health Report using the SoS output for $workflowMessage."
                 $nsxtHtml = Invoke-Expression "Publish-NsxtCombinedHealth -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -json $jsonFilePath $($commandSwitch) $($failureOnlySwitch)"; $reportData += $nsxtHtml
 
@@ -187,7 +207,7 @@ Function Invoke-VcfHealthReport {
 
                 # Generating the Disk Capacity Health Data Using PowerShell Request Functions
                 Write-LogMessage -Type INFO -Message "Generating the Disk Capacity Report for $workflowMessage.'"
-                $storageCapacityHealthHtml = Invoke-Expression "Publish-StorageCapacityHealth -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -rootPass $sddcManagerRootPass $($commandSwitch) $($failureOnlySwitch)"; $reportData += $storageCapacityHealthHtml
+                $storageCapacityHealthHtml = Invoke-Expression "Publish-StorageCapacityHealth -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -localUser $sddcManagerLocalUser -localPass $sddcManagerLocalPass $($commandSwitch) $($failureOnlySwitch)"; $reportData += $storageCapacityHealthHtml
 
                 # Generating the Virtual Machines with Connected CD-ROM Health Data Using PowerShell Request Functions
                 Write-LogMessage -type INFO -Message "Generating the Virtual Machines with Connected CD-ROM Report for $workflowMessage."
@@ -271,7 +291,7 @@ Function Invoke-VcfAlertReport {
                     $workflowMessage = "Workload Domain ($workloadDomain)"
                     $commandSwitch = "-workloadDomain $workloadDomain"
                 }
-                if ($PsBoundParameters.ContainsKey('failureOnly')) { 
+                if ($PsBoundParameters.ContainsKey('failureOnly')) {
                     $commandSwitch = $commandSwitch + " -failureOnly"
                 }
 
@@ -554,165 +574,6 @@ Function Invoke-VcfUpgradePrecheck {
 }
 Export-ModuleMember -Function Invoke-VcfUpgradePrecheck
 
-Function Invoke-VcfPasswordPolicy {
-    <#
-        .SYNOPSIS
-        Generate a password policy report
-
-        .DESCRIPTION
-        The Invoke-VcfPasswordPolicy runs a password policy report for a Workload Domain
-
-        .EXAMPLE
-        Invoke-VcfPasswordPolicy -sddcManagerFqdn sfo-vcf01.sfo.rainpole.io -sddcManagerUser admin@local -sddcManagerPass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -reportPath F:\Reporting -allDomains
-        This example runs a password policy report for all Workload Domain within an SDDC Manager instance.
-
-        .EXAMPLE
-        Invoke-VcfPasswordPolicy -sddcManagerFqdn sfo-vcf01.sfo.rainpole.io -sddcManagerUser admin@local -sddcManagerPass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -reportPath F:\Reporting -workloadDomain sfo-w01
-        This example runs a password policy report for a specific Workload Domain within an SDDC Manager instance.
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerFqdn,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerUser,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerPass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcRootPass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$reportPath,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$darkMode,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$policyByProduct
-    )
-
-    Try {
-        Clear-Host; Write-Host ""
-
-        if (Test-VCFConnection -server $sddcManagerFqdn) {
-            if (Test-VCFAuthentication -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass) {
-                $defaultReport = Start-CreateReportDirectory -path $reportPath -sddcManagerFqdn $sddcManagerFqdn -reportType policy # Setup Report Location and Report File
-                if (!(Test-Path -Path $reportPath)) {Write-Warning "Unable to locate report path $reportPath, enter a valid path and try again"; Write-Host ""; Break }
-                if ($PsBoundParameters.ContainsKey("allDomains")) {
-                    $reportname = $defaultReport.Split('.')[0] + "-" + $sddcManagerFqdn.Split(".")[0] + ".htm"
-                    $reportData = "<h1>SDDC Manager: $sddcManagerFqdn</h1>"
-                    $workflowMessage = "VMware Cloud Foundation instance ($sddcManagerFqdn)"
-                    $commandSwitch = "-allDomains"
-                } else {
-                    $reportname = $defaultReport.Split('.')[0] + "-" + $workloadDomain + ".htm"
-                    $reportData = "<h1>Workload Domain: $workloadDomain</h1>"
-                    $workflowMessage = "Workload Domain ($workloadDomain)"
-                    $commandSwitch = "-workloadDomain $workloadDomain"
-                }
-                Start-SetupLogFile -Path $reportPath -ScriptName $MyInvocation.MyCommand.Name # Setup Log Location and Log File
-                Write-LogMessage -Type INFO -Message "Starting the Process of Running a Password Policy Report for $workflowMessage." -Colour Yellow
-                Write-LogMessage -Type INFO -Message "Setting up the log file to path $logfile."
-                Write-LogMessage -Type INFO -Message "Setting up report folder and report $reportName."
-
-                Write-LogMessage -Type INFO -Message "Collecting SDDC Manager Password Policies for $workflowMessage."
-                $sddcManagerPasswordExpirationHtml = Invoke-Expression "Publish-SddcManagerPasswordExpiration -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -sddcRootPass $sddcRootPass $($commandSwitch)"
-                $sddcManagerPasswordComplexityHtml = Invoke-Expression "Publish-SddcManagerPasswordComplexity -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -sddcRootPass $sddcRootPass $($commandSwitch)"
-                $sddcManagerAccountLockoutHtml = Invoke-Expression "Publish-SddcManagerAccountLockout -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -sddcRootPass $sddcRootPass $($commandSwitch)"
-                
-                Write-LogMessage -Type INFO -Message "Collecting vCenter Single Sign-On Password Policies for $workflowMessage."
-                $ssoPasswordExpirationHtml = Invoke-Expression "Publish-SsoPasswordPolicy -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -policy PasswordExpiration $($commandSwitch)"
-                $ssoPasswordComplexityHtml = Invoke-Expression "Publish-SsoPasswordPolicy -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -policy PasswordComplexity $($commandSwitch)"
-                $SsoAccountLockoutHtml = Invoke-Expression "Publish-SsoPasswordPolicy -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -policy AccountLockout $($commandSwitch)"
-
-                Write-LogMessage -Type INFO -Message "Collecting vCenter Server Password Expiration Policy for $workflowMessage."
-                $vcenterPasswordExpirationHtml = Invoke-Expression "Publish-VcenterPasswordExpiration -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass $($commandSwitch)"
-
-                Write-LogMessage -Type INFO -Message "Collecting vCenter Server (Local User) Password Policies for $workflowMessage."
-                $vcenterLocalPasswordExpirationHtml = Invoke-Expression "Publish-VcenterLocalPasswordExpiration -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass $($commandSwitch)"
-                $vcenterLocalPasswordComplexityHtml = Invoke-Expression "Publish-VcenterLocalPasswordComplexity -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass $($commandSwitch)"
-                $vcenterLocalAccountLockoutHtml = Invoke-Expression "Publish-VcenterLocalAccountLockout -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass $($commandSwitch)"
-
-                Write-LogMessage -Type INFO -Message "Collecting NSX Manager Password Policies for $workflowMessage."
-                $nsxManagerPasswordExpirationHtml = Invoke-Expression "Publish-NsxManagerPasswordExpiration -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass $($commandSwitch)"
-                $nsxManagerPasswordComplexityHtml = Invoke-Expression "Publish-NsxManagerPasswordComplexity -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass $($commandSwitch)"
-                $nsxMangerAccountLockoutHtml = Invoke-Expression "Publish-NsxManagerAccountLockout -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass $($commandSwitch)"
-
-                Write-LogMessage -Type INFO -Message "Collecting NSX Edge Password Policies for $workflowMessage."
-                $nsxEdgePasswordExpirationHtml = Invoke-Expression "Publish-NsxEdgePasswordExpiration -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass $($commandSwitch)"
-                $nsxEdgePasswordComplexityHtml = Invoke-Expression "Publish-NsxEdgePasswordComplexity -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass $($commandSwitch)"
-                $nsxEdgeAccountLockoutHtml = Invoke-Expression "Publish-NsxEdgeAccountLockout -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass $($commandSwitch)"
-
-                Write-LogMessage -Type INFO -Message "Collecting ESXi Password Policies for $workflowMessage."
-                $esxiPasswordExpirationHtml = Invoke-Expression "Publish-EsxiPasswordPolicy -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -policy PasswordExpiration $($commandSwitch)"
-                $esxiPasswordComplexityHtml = Invoke-Expression "Publish-EsxiPasswordPolicy -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -policy PasswordComplexity $($commandSwitch)"
-                $esxiAccountLockoutHtml = Invoke-Expression "Publish-EsxiPasswordPolicy -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass -policy AccountLockout $($commandSwitch)"
-
-                if ($PsBoundParameters.ContainsKey("policyByProduct")) {
-                    $reportData += $sddcManagerPasswordExpirationHtml
-                    $reportData += $sddcManagerPasswordComplexityHtml
-                    $reportData += $sddcManagerAccountLockoutHtml
-                    $reportData += $ssoPasswordExpirationHtml
-                    $reportData += $ssoPasswordComplexityHtml
-                    $reportData += $ssoAccountLockoutHtml
-                    $reportData += $vcenterPasswordExpirationHtml
-                    $reportData += $vcenterLocalPasswordExpirationHtml
-                    $reportData += $vcenterLocalPasswordComplexityHtml
-                    $reportData += $vcenterLocalAccountLockoutHtml
-                    $reportData += $nsxManagerPasswordExpirationHtml
-                    $reportData += $nsxManagerPasswordComplexityHtml
-                    $reportData += $nsxMangerAccountLockoutHtml
-                    $reportData += $nsxEdgePasswordExpirationHtml
-                    $reportData += $nsxEdgePasswordComplexityHtml
-                    $reportData += $nsxEdgeAccountLockoutHtml
-                    $reportData += $esxiPasswordExpirationHtml
-                    $reportData += $esxiPasswordComplexityHtml
-                    $reportData += $esxiAccountLockoutHtml
-                } else {
-                    $reportData += $sddcManagerPasswordExpirationHtml
-                    $reportData += $ssoPasswordExpirationHtml
-                    $reportData += $vcenterPasswordExpirationHtml
-                    $reportData += $vcenterLocalPasswordExpirationHtml
-                    $reportData += $nsxManagerPasswordExpirationHtml
-                    $reportData += $nsxEdgePasswordExpirationHtml
-                    $reportData += $esxiPasswordExpirationHtml
-                    $reportData += $sddcManagerPasswordComplexityHtml
-                    $reportData += $ssoPasswordComplexityHtml
-                    $reportData += $vcenterLocalPasswordComplexityHtml
-                    $reportData += $nsxManagerPasswordComplexityHtml
-                    $reportData += $nsxEdgePasswordComplexityHtml
-                    $reportData += $esxiPasswordComplexityHtml
-                    $reportData += $sddcManagerAccountLockoutHtml
-                    $reportData += $ssoAccountLockoutHtml
-                    $reportData += $vcenterLocalAccountLockoutHtml
-                    $reportData += $nsxMangerAccountLockoutHtml
-                    $reportData += $nsxEdgeAccountLockoutHtml
-                    $reportData += $esxiAccountLockoutHtml
-                }
-
-                if ($PsBoundParameters.ContainsKey("darkMode")) {
-                    $reportHeader = Get-ClarityReportHeader -dark
-                } else {
-                    $reportHeader = Get-ClarityReportHeader
-                }
-                if ($PsBoundParameters.ContainsKey("policyByProduct")) {
-                    $reportNavigation = Get-ClarityReportNavigation -reportType policyByProduct
-                } else {
-                    $reportNavigation = Get-ClarityReportNavigation -reportType policy
-                }
-                $reportFooter = Get-ClarityReportFooter
-                $report = $reportHeader
-                $report += $reportNavigation
-                $report += $reportData
-                $report += $reportFooter
-
-                # Generate the report to an HTML file and then open it in the default browser
-                Write-LogMessage -Type INFO -Message "Generating the Final Report and Saving to ($reportName)."
-                $report | Out-File $reportName
-                if ($PSEdition -eq "Core" -and ($PSVersionTable.OS).Split(' ')[0] -ne "Linux") {
-                    Invoke-Item $reportName
-                } elseif ($PSEdition -eq "Desktop") {
-                    Invoke-Item $reportName
-                }
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Invoke-VcfPasswordPolicy
-
 Function Invoke-VcfOverviewReport {
     <#
         .SYNOPSIS
@@ -809,50 +670,145 @@ Function Request-SoSHealthJson {
         JSON file to the local file system.
 
         .EXAMPLE
-        Request-SoSHealthJson -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -rootPass VMw@re1! -reportPath F:\Precheck\HealthReports -allDomains
-        This example runs an SoS Health collection on all domains on the SDDC and saves the JSON output to the local file system.
+        Request-SoSHealthJson -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -reportPath F:\Reporting\HealthReports -allDomains
+        This example runs an SoS Health collection for all domains in the SDDC and saves the JSON output to the local file system.
+
+        .EXAMPLE
+        Request-SoSHealthJson -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -reportPath F:\Reporting\HealthReports -workloadDomain sfo-w01
+        This example runs an SoS Health collection for a workload domain in the SDDC and saves the JSON output to the local file system.
     #>
 
     Param (
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$rootPass,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$reportPath,
         [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
         [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
     )
 
+    # Build Default Health Summary Check POST payload
+    $healthChecksPayload = New-Object -TypeName psobject
+    $healthChecksPayload | Add-Member -notepropertyname 'certificateHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'composabilityHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'computeHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'connectivityHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'dnsHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'generalHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'hardwareCompatibilityHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'ntpHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'passwordHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'servicesHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'storageHealth' -notepropertyvalue $true
+    $healthChecksPayload | Add-Member -notepropertyname 'versionHealth' -notepropertyvalue $true
+    $optionsConfigPayload = New-Object -TypeName psobject
+    $optionsConfigPayload | Add-Member -notepropertyname 'force' -notepropertyvalue $false
+    $optionsConfigPayload | Add-Member -notepropertyname 'skipKnownHostCheck' -notepropertyvalue $true
+    $optionsIncludePayload = New-Object -TypeName psobject
+    $optionsIncludePayload | Add-Member -notepropertyname 'precheckReport' -notepropertyvalue $false
+    $optionsIncludePayload | Add-Member -notepropertyname 'summaryReport' -notepropertyvalue $false
+    $optionsPayload = New-Object -TypeName psobject
+    $optionsPayload | Add-Member -notepropertyname 'config' -notepropertyvalue $optionsConfigPayload
+    $optionsPayload | Add-Member -notepropertyname 'include' -notepropertyvalue $optionsIncludePayload
+    $scopeDomainsPayload = New-Object -TypeName psobject
+    $scopeDomainsPayload | Add-Member -notepropertyname 'clusterNames' -notepropertyvalue @()
+    $scopeDomainsPayload | Add-Member -notepropertyname 'domainName' -notepropertyvalue ""
+    $scopeDomainsPayload.clusterNames += @("")
+    $domainsArray = @()
+    $domainsArray += $scopeDomainsPayload
+    $scopePayload = New-Object -TypeName psobject
+    $scopePayload | Add-Member -notepropertyname 'domains' -notepropertyvalue @()
+    $scopePayload | Add-Member -notepropertyname 'includeAllDomains' -notepropertyvalue $false
+    $scopePayload | Add-Member -notepropertyname 'includeFreeHosts' -notepropertyvalue $false
+    $scopePayload.domains += $domainsArray
+    $healthSummarySpec = New-Object -TypeName psobject
+    $healthSummarySpec | Add-Member -notepropertyname 'healthChecks' -notepropertyvalue $healthChecksPayload
+    $healthSummarySpec | Add-Member -notepropertyname 'options' -notepropertyvalue $optionsPayload
+    $healthSummarySpec | Add-Member -notepropertyname 'scope' -notepropertyvalue $scopePayload
+    
+    # Request VCF Token
+    Request-VCFToken -fqdn $server -Username $user -Password $pass -skipCertificateCheck -ErrorAction SilentlyContinue -ErrorVariable ErrMsg | Out-Null
+
     Try {
         if ($PsBoundParameters.ContainsKey("allDomains")) {
-            $command = "/opt/vmware/sddc-support/sos --health-check --skip-known-host-check --json-output-dir /tmp/jsons --domain-name ALL"
+            $healthSummarySpec.scope.includeAllDomains = $true
             if ($PSEdition -eq "Core" -and ($PSVersionTable.OS).Split(' ')[0] -eq "Linux") {
                 $reportDestination = ($reportDestination = ($reportPath + "\" + $server.Split(".")[0] + "-all-health-results.json")).split('\') -join '/' | Split-Path -NoQualifier
             } else {
                 $reportDestination = ($reportPath + "\" + $server.Split(".")[0] + "-all-health-results.json")
             }
         } elseif ($PsBoundParameters.ContainsKey("workloadDomain")) {
-            $command = "/opt/vmware/sddc-support/sos --health-check --skip-known-host-check --json-output-dir /tmp/jsons --domain-name " + $workloadDomain
+            $healthSummarySpec.scope.domains[0].domainName = $workloadDomain
             if ($PSEdition -eq "Core" -and ($PSVersionTable.OS).Split(' ')[0] -eq "Linux") {
                 $reportDestination = ($reportDestination = ($reportPath + "\" + $workloadDomain + "-all-health-results.json")).split('\') -join '/' | Split-Path -NoQualifier
             } else {
                 $reportDestination = ($reportPath + "\" + $workloadDomain + "-all-health-results.json")
             }
         }
-        Invoke-SddcCommand -server $server -user $user -pass $pass -vmUser root -vmPass $rootPass -command $command | Out-Null
         if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                if (($vcfVcenterDetails = Get-vCenterServerDetail -server $server -user $user -pass $pass -domainType MANAGEMENT)) {
-                    if (Test-VsphereConnection -server $($vcfVcenterDetails.fqdn)) {
-                        if (Test-VsphereAuthentication -server $vcfVcenterDetails.fqdn -user $vcfVcenterDetails.ssoAdmin -pass $vcfVcenterDetails.ssoAdminPass) {
-                            Copy-VMGuestFile -Source "/tmp/jsons/health-results.json" -Destination $reportDestination -VM $server.Split(".")[0] -GuestToLocal -GuestUser root -GuestPassword $rootPass
-                            $temp = Get-Content -Path $reportDestination; $temp = $temp -replace '""', '"-"'; $temp | Out-File $reportDestination
-                            $reportDestination
-                        }
-                        Disconnect-VIServer -Server $vcfVcenterDetails.fqdn -Confirm:$false -WarningAction SilentlyContinue | Out-Null
-                    }
-                }
-            }
+            # Create a temporary directory under reportDirectory
+            $createPathCounter = 0
+			for ($createPathCounter -lt 4) {
+				$randomOutput = -join (((48..57)+(65..90)+(97..122)) * 80 |Get-Random -Count 6 |%{[char]$_})
+				$outFilePath = Join-Path -Path $reportPath -childPath $randomOutput
+				if (!(Test-Path -Path $outFilePath) -and (Test-Path -Path $reportPath)) {
+					Break
+				} else {
+					if ($createPathCounter -eq 3) {
+						Write-Error "Unable to write to $reportPath."
+					}
+					$createPathCounter++
+				}
+			}
+			New-Item -Path $outFilePath -ItemType Directory | Out-NULL
+
+            # Use REST API method to request the health summary.
+            $healthSummaryPayloadJson = Join-Path -Path $outFilePath -childPath "healthSummaryPayload.json"
+			ConvertTo-JSON $healthSummarySpec -depth 10 | Out-File $healthSummaryPayloadJson
+            $response = Start-VCFHealthSummary -json $healthSummaryPayloadJson
+			if ($response.id -eq "") {
+				Write-Error "The Health Summary request encountered an issue. Please try again."
+				Return $false
+			}
+			$requestID = $response.id
+			
+            # Retrieve the request status.
+            $response = Get-VCFHealthSummaryTask -id $requestID
+            $escapeCounter = 0
+			While (($escapeCounter -lt 30) -and !($response.status -match "COMPLETED")) {
+				sleep(30)
+				$escapeCounter++
+                $response = Get-VCFHealthSummaryTask -id $requestID
+			}
+			if ($escapeCounter -eq 20) {
+				Write-Error " The Health Summary request is taking an unusual amount of time to complete."
+				Return $false
+			}
+
+            # Download the health summary bundle file to a temporary directory.
+            Request-VCFHealthSummaryBundle -id $requestID
+			$outFile = Join-Path -Path $outFilePath  -childPath "health-summary.tar.gz"
+			$savedFile = "health-summary-"+$requestID+".tar"
+			if (Test-Path -Path $savedFile) {
+				Copy-Item $savedFile $outFile | Out-NULL
+				Remove-Item -Force $savedFile  | Out-NULL
+			} else {
+				Write-Error "An error was encountered downloading the health summary bundle."
+				Return $false
+			}
+
+            # Untar the tar.gz file and extract health-results.json file.
+			tar -xzf $outFile -C $outFilePath | Out-NULL
+			$healthSummaryPath = gci -recurse -filter "health-results.json" -Path $outFilePath
+			$healthSummaryFile = Join-Path -Path $healthSummaryPath.DirectoryName -childPath "health-results.json"
+			Copy-Item $healthSummaryFile $reportDestination  | Out-NULL
+				
+			# Remove the temporary directory.
+			Remove-Item -Recurse -Force $outFilePath  | Out-NULL
+				
+            # Convert to JSON.
+            $temp = Get-Content -Path $reportDestination; $temp = $temp -replace '""', '"-"'; $temp | Out-File $reportDestination
+			Return $reportDestination
         }
     }
     Catch {
@@ -901,13 +857,26 @@ Function Publish-CertificateHealth {
         if (($jsonInputData | Measure-Object).Count -lt 1) {
             Write-Warning 'Certificate Status data not found in the JSON file: SKIPPED'
         } else {
-            $jsonInputData.PSObject.Properties.Remove('ESXI')
             foreach ($component in $jsonInputData.PsObject.Properties.Value) {
                 foreach ($element in $component.PsObject.Properties.Value) {
                     $elementObject = New-Object -TypeName psobject
                     $elementObject | Add-Member -NotePropertyName 'Component' -NotePropertyValue ($element.area -Split (':'))[0].Trim()
                     $elementObject | Add-Member -NotePropertyName 'Resource' -NotePropertyValue ($element.area -Split (':'))[-1].Trim()
-                    $elementObject | Add-Member -NotePropertyName 'Alert' -NotePropertyValue $element.alert
+                    if ($element.title -and $element.title -notcontains "-") {
+                        $current = [DateTime]::Now
+                        $expiry = [DateTime]::ParseExact(($element.title[2] -replace '\s+', ' '), "MMM d HH:mm:ss yyyy 'GMT'", $null).ToUniversalTime()
+                        $expires_in = ($expiry - $current).Days
+                            $alert = "GREEN"
+                            if ([int]$expires_in -le 15) {
+                                $alert = "RED"
+                            } elseif ([int]$expires_in -le 30) {
+                                $alert = "YELLOW"
+                            }
+                        $elementObject | Add-Member -NotePropertyName 'Expires In (Days)' -NotePropertyValue $expires_in
+                        $elementObject | Add-Member -NotePropertyName 'Alert' -NotePropertyValue $alert
+                    } else {
+                        $elementObject | Add-Member -NotePropertyName 'Alert' -NotePropertyValue $element.alert
+                    }
                     $elementObject | Add-Member -NotePropertyName 'Message' -NotePropertyValue $element.message
                     if ($PsBoundParameters.ContainsKey('failureOnly')) {
                         if (($element.status -eq 'FAILED')) {
@@ -944,6 +913,7 @@ Function Publish-CertificateHealth {
     }
 }
 Export-ModuleMember -Function Publish-CertificateHealth
+
 
 Function Publish-ConnectivityHealth {
     <#
@@ -985,7 +955,7 @@ Function Publish-ConnectivityHealth {
         $jsonInputCheck = $targetContent.Connectivity.'Connectivity Status' # Extract Data from the provided SOS JSON
         if (($jsonInputCheck | Measure-Object).Count -lt 1) {
             Write-Warning 'Connectivity Status data not found in the JSON file: SKIPPED'
-        } else {  
+        } else {
 
             # ESXi SSH Status
             $jsonInputData = $targetContent.Connectivity.'Connectivity Status'.'ESXi SSH Status' # Extract Data from the provided SOS JSON
@@ -1201,7 +1171,7 @@ Function Publish-EsxiHealth {
         $jsonComputeCheck = $targetContent.Compute # Extract Data from the provided SOS JSON
         if (($jsonComputeCheck | Measure-Object).Count -lt 1) {
             Write-Warning 'Compute data not found in the JSON file: SKIPPED'
-        } else {  
+        } else {
             # ESXi Overall Health Status
             $jsonInputData = $targetContent.Compute.'ESXi Overall Health' # Extract Data from the provided SOS JSON
             if ($PsBoundParameters.ContainsKey('failureOnly')) {
@@ -1273,7 +1243,7 @@ Function Publish-EsxiHealth {
             }
             $allLicenseObject
 
-            if (($jsonComputeCheck | Measure-Object).Count -gt 0) { 
+            if (($jsonComputeCheck | Measure-Object).Count -gt 0) {
                 if ($allDiskObject.Count -eq 0) { $addNoIssues = $true }
                 if ($addNoIssues) {
                     $allDiskObject = $allDiskObject | Sort-Object Component, Resource | ConvertTo-Html -Fragment -PreContent '<a id="esxi-disk"></a><h3>ESXi Disk Health Status</h3>' -PostContent '<p>No issues found.</p>'
@@ -1339,7 +1309,7 @@ Function Publish-NsxtHealth {
         $jsonInputCheck = $targetContent.General.'NSX Health' # Extract Data from the provided SOS JSON
         if (($jsonInputCheck | Measure-Object).Count -lt 1) {
             Write-Warning 'NSX Health data not found in the JSON file: SKIPPED'
-        } else {  
+        } else {
 
             # NSX Manager Health
             $component = 'NSX Manager'
@@ -1744,11 +1714,25 @@ Function Publish-PasswordHealth {
         if (($jsonInputData | Measure-Object).Count -lt 1) {
             Write-Warning 'Password Expiry Status not found in the JSON file: SKIPPED'
         } else {
-            if ($PsBoundParameters.ContainsKey("failureOnly")) {
-                $outputObject = Read-JsonElement -inputData $jsonInputData -failureOnly # Call Function to Structure the Data for Report Output
-            } else {
-                $outputObject = Read-JsonElement -inputData $jsonInputData # Call Function to Structure the Data for Report Output
+            $outputObject = New-Object System.Collections.ArrayList
+            foreach ($element in $jsonInputData.PsObject.Properties.Value) {
+                $elementObject = New-Object -TypeName psobject
+                $elementObject | Add-Member -NotePropertyName 'Component' -NotePropertyValue ($element.area -Split (':'))[0].Trim()
+                $elementObject | Add-Member -NotePropertyName 'Resource' -NotePropertyValue ($element.area -Split (':'))[-1].Trim()
+                $elementObject | Add-Member -NotePropertyName 'User' -NotePropertyValue $element.title.User
+                $elementObject | Add-Member -NotePropertyName 'Expires In (Days)' -NotePropertyValue $element.title.expires_in
+                $elementObject | Add-Member -NotePropertyName 'Alert' -NotePropertyValue $element.alert
+                $elementObject | Add-Member -NotePropertyName 'Message' -NotePropertyValue $element.message
+                if ($PsBoundParameters.ContainsKey('failureOnly')) {
+                    if (($element.status -eq 'FAILED')) {
+                        $outputObject += $elementObject
+                    }
+                }
+                else {
+                    $outputObject += $elementObject
+                }
             }
+
         }
 
         # Return the structured data to the console or format using HTML CSS Styles
@@ -1774,6 +1758,89 @@ Function Publish-PasswordHealth {
     }
 }
 Export-ModuleMember -Function Publish-PasswordHealth
+
+Function Publish-VersionHealth {
+    <#
+        .SYNOPSIS
+        Formats the Version Health data from the SoS JSON output.
+
+        .DESCRIPTION
+        The Publish-VersionHealth cmdlet formats the Version Health data from the SoS JSON output and publishes it as
+        either a standard PowerShell object or an HTML object.
+
+        .EXAMPLE
+        Publish-VersionHealth -json <file-name>
+        This example extracts and formats the Version Health data as a PowerShell object from the JSON file.
+
+        .EXAMPLE
+        Publish-VersionHealth -json <file-name> -html
+        This example extracts and formats the Version Health data as an HTML object from the JSON file.
+
+        .EXAMPLE
+        Publish-VersionHealth -json <file-name> -failureOnly
+        This example extracts and formats the Version Health data as a PowerShell object from the JSON file for only the failed items.
+    #>
+
+    Param (
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$json,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$html,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
+    )
+
+    Try {
+        if (!(Test-Path -Path $json)) {
+            Write-Error "Unable to find JSON file at location ($json)" -ErrorAction Stop
+        } else {
+            $targetContent = Get-Content $json | ConvertFrom-Json
+        }
+
+        # Version Health
+        $jsonInputData = $targetContent.'Version Check Status' # Extract Data from the provided SOS JSON
+        if (($jsonInputData | Measure-Object).Count -lt 1) {
+            Write-Warning 'Version Check Status not found in the JSON file: SKIPPED'
+        } else {
+            $outputObject = New-Object System.Collections.ArrayList
+            foreach ($element in $jsonInputData.PsObject.Properties.Value) {
+                $elementObject = New-Object -TypeName psobject
+                $elementObject | Add-Member -NotePropertyName 'Component' -NotePropertyValue ($element.area -Split (':'))[0].Trim()
+                $elementObject | Add-Member -NotePropertyName 'Resource' -NotePropertyValue ($element.area -Split (':'))[-1].Trim()
+                $elementObject | Add-Member -NotePropertyName 'Version' -NotePropertyValue $element.title[0]
+                $elementObject | Add-Member -NotePropertyName 'Alert' -NotePropertyValue $element.alert
+                $elementObject | Add-Member -NotePropertyName 'Message' -NotePropertyValue $element.message
+                if ($PsBoundParameters.ContainsKey('failureOnly')) {
+                    if (($element.status -eq 'FAILED')) {
+                        $outputObject += $elementObject
+                    }
+                }
+                else {
+                    $outputObject += $elementObject
+                }
+            }
+        }
+
+        if ($PsBoundParameters.ContainsKey('html')) {
+            if (($jsonInputData | Measure-Object).Count -gt 0) {
+                if ($outputObject.Count -eq 0) { $addNoIssues = $true }
+                if ($addNoIssues) {
+                    $outputObject = $outputObject | Sort-Object Component, Resource | ConvertTo-Html -Fragment -PreContent '<a id="general-version"></a><h3>Version Health Status</h3>' -PostContent '<p>No issues found.</p>'
+                } else {
+                    $outputObject = $outputObject | Sort-Object Component, Resource | ConvertTo-Html -Fragment -PreContent '<a id="general-version"></a><h3>Version Health Status</h3>' -As Table
+                }
+                $outputObject = Convert-CssClass -htmldata $outputObject
+            } else {
+                $outputObject = $outputObject | Sort-Object Component, Resource | ConvertTo-Html -Fragment -PreContent '<a id="general-version"></a><h3>Version Health Status</h3>' -PostContent '<p><strong>WARNING</strong>: Version data not found.</p>' -As Table
+            }
+            $outputObject
+        }
+        else {
+            $outputObject | Sort-Object Component, Resource
+        }
+    }
+    Catch {
+        Debug-CatchWriter -object $_
+    }
+}
+Export-ModuleMember -Function Publish-VersionHealth
 
 Function Publish-ServiceHealth {
     <#
@@ -1957,6 +2024,7 @@ Function Publish-VcenterHealth {
             } else {
                 $ringTopologyHealth = $ringTopologyHealth | Sort-Object Component, Resource | ConvertTo-Html -Fragment -PreContent '<a id="vcenter-ring-topology"></a><h3>vCenter Server Ring Topology Health Status</h3>' -PostContent '<p><strong>WARNING</strong>: vCenter Server Overall Health data not found.</p>' -As Table
             }
+            $ringTopologyHealth
         } else {
             $ringTopologyHealth | Sort-Object Component, Resource
         }
@@ -2006,9 +2074,9 @@ Function Publish-VsanHealth {
         $jsonInputCheck = $targetContent.vSAN # Extract Data from the provided SOS JSON
         if (($jsonInputCheck | Measure-Object).Count -lt 1) {
             Write-Warning 'vSAN data not found in the JSON file: SKIPPED'
-        } else {  
+        } else {
 
-            # vSAN Cluster Health Status
+            # Cluster Health Status
             $jsonInputData = $targetContent.vSAN.'Cluster vSAN Status' # Extract Data from the provided SOS JSON
             if ($PsBoundParameters.ContainsKey("failureOnly")) {
                 $outputObject = Read-JsonElement -inputData $jsonInputData -failureOnly # Call Function to Structure the Data for Report Output
@@ -2019,6 +2087,24 @@ Function Publish-VsanHealth {
 
             # Cluster Disk Status
             $jsonInputData = $targetContent.vSAN.'Cluster Disk Status' # Extract Data from the provided SOS JSON
+            if ($PsBoundParameters.ContainsKey("failureOnly")) {
+                $outputObject = Read-JsonElement -inputData $jsonInputData -failureOnly # Call Function to Structure the Data for Report Output
+            } else {
+                $outputObject = Read-JsonElement -inputData $jsonInputData # Call Function to Structure the Data for Report Output
+            }
+            $customObject += $outputObject # Adding individual component to main customObject
+
+            # Cluster Capacity Utilization
+            $jsonInputData = $targetContent.vSAN.'vSAN Capacity Utilization' # Extract Data from the provided SOS JSON
+            if ($PsBoundParameters.ContainsKey("failureOnly")) {
+                $outputObject = Read-JsonElement -inputData $jsonInputData -failureOnly # Call Function to Structure the Data for Report Output
+            } else {
+                $outputObject = Read-JsonElement -inputData $jsonInputData # Call Function to Structure the Data for Report Output
+            }
+            $customObject += $outputObject # Adding individual component to main customObject
+
+            # Cluster Active ReSync Objects
+            $jsonInputData = $targetContent.vSAN.'Active ReSync Objects' # Extract Data from the provided SOS JSON
             if ($PsBoundParameters.ContainsKey("failureOnly")) {
                 $outputObject = Read-JsonElement -inputData $jsonInputData -failureOnly # Call Function to Structure the Data for Report Output
             } else {
@@ -2061,6 +2147,35 @@ Function Publish-VsanHealth {
                 $outputObject = Read-JsonElement -inputData $jsonInputData # Call Function to Structure the Data for Report Output
             }
             $customObject += $outputObject # Adding individual component to main customObject
+
+            # Stretched Cluster Health Status
+            $jsonInputData = $targetContent.vSAN.'Stretched Cluster Health Status' # Extract Data from the provided SOS JSON
+            if ($PsBoundParameters.ContainsKey("failureOnly")) {
+                $outputObject = Read-JsonElement -inputData $jsonInputData -failureOnly # Call Function to Structure the Data for Report Output
+            } else {
+                $outputObject = Read-JsonElement -inputData $jsonInputData # Call Function to Structure the Data for Report Output
+            }
+            $customObject += $outputObject # Adding individual component to main customObject
+
+            # Stretched Cluster Tests
+            $jsonInputData = $targetContent.vSAN.'Stretched Cluster Tests' # Extract Data from the provided SOS JSON
+            foreach ($component in $jsonInputData.PsObject.Properties.Value) {
+                foreach ($element in $component.PsObject.Properties.Value) {
+                    $outputObject = New-Object -TypeName psobject
+                    $outputObject | Add-Member -NotePropertyName 'Component' -NotePropertyValue ($element.area -Split (':'))[0].Trim()
+                    $outputObject | Add-Member -NotePropertyName 'Resource' -NotePropertyValue ($element.area -Split (':'))[-1].Trim()
+                    $outputObject | Add-Member -NotePropertyName 'Alert' -NotePropertyValue $element.alert
+                    $outputObject | Add-Member -NotePropertyName 'Message' -NotePropertyValue $element.message
+                    if ($PsBoundParameters.ContainsKey('failureOnly')) {
+                        if (($element.status -eq 'FAILED')) {
+                            $customObject += $outputObject
+                        }
+                    } else {
+                        $customObject += $outputObject # Adding individual component to main customObject
+                    }
+                }
+            }
+
         }
 
         # Return the structured data to the console or format using HTML CSS Styles
@@ -2201,6 +2316,7 @@ Function Publish-BackupStatus {
         report. The cmdlet connects to SDDC Manager using the -server, -user, and password values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Performs checks on the backup status and outputs the results
+        - outputJson parameter takes in name of the folder to save the json. Filename is autogenerated.
 
         .EXAMPLE
         Publish-BackupStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
@@ -2213,6 +2329,11 @@ Function Publish-BackupStatus {
         .EXAMPLE
         Publish-BackupStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
         This example will publish the backup status for the vCenter Server instances, and NSX Local Manager clusters in Workload Domain sfo-w01.
+
+        .EXAMPLE
+        Publish-BackupStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains -outputJson F:\Reporting
+        This example will generate a json for the backup status for the vCenter Server instances, and NSX Local Manager clusters in a VMware Cloud Foundation instance
+        and saves it under F:\Reporting with filename <timestamp>-backup-status.json
     #>
 
     Param (
@@ -2221,7 +2342,8 @@ Function Publish-BackupStatus {
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
         [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
         [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [String]$outputJson
     )
 
     Try {
@@ -2261,14 +2383,20 @@ Function Publish-BackupStatus {
                     }
                 }
 
-                if ($allBackupStatusObject.Count -eq 0) { $addNoIssues = $true }
+                if ($PsBoundParameters.ContainsKey('outputJson')) {
+                    $json = Start-CreateOutputJsonDirectory -jsonFolder $outputJson -jsonFileSuffix $backupJsonSuffix
+                    $allBackupStatusObject | ConvertTo-JSON -Depth 10 | Out-File $json -Encoding ASCII
+                    Write-Output "JSON Created at $json"
+                } else {
+                    if ($allBackupStatusObject.Count -eq 0) { $addNoIssues = $true }
                     if ($addNoIssues) {
                         $allBackupStatusObject = $allBackupStatusObject | Sort-Object Component, Resource, Element | ConvertTo-Html -Fragment -PreContent '<a id="infra-backup"></a><h3>Backups Status</h3>' -PostContent "<p>No issues found.</p><p>Please verify that each successful file-based backup exists on the destination.</p>"
                     } else {
                         $allBackupStatusObject = $allBackupStatusObject | Sort-Object Component, Resource, Element | ConvertTo-Html -Fragment -PreContent '<a id="infra-backup"></a><h3>Backups Status</h3>' -PostContent "<p>Please verify that each successful file-based backup exists on the destination.</p>" -As Table
                     }
-                $allBackupStatusObject = Convert-CssClass -htmldata $allBackupStatusObject
-                $allBackupStatusObject
+                    $allBackupStatusObject = Convert-CssClass -htmldata $allBackupStatusObject
+                    $allBackupStatusObject
+                }
             }
         }
     }
@@ -2301,6 +2429,11 @@ Function Publish-NsxtTransportNodeStatus {
         .EXAMPLE
         Publish-NsxtTransportNodeStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
         This example will publish the BGP status for the NSX transport nodes in a VMware Cloud Foundation instance for a workload domain named sfo-w01.
+
+        .EXAMPLE
+        Publish-NsxtTransportNodeStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains -outputJson F:\Reporting
+        This example will generate a json for the status of all NSX transport nodes in a VMware Cloud Foundation instance.
+        and saves it under F:\Reporting with filename <timestamp>-nsxttransportnode-status.json
     #>
     Param (
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
@@ -2308,7 +2441,9 @@ Function Publish-NsxtTransportNodeStatus {
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
         [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
         [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [String]$outputJson
+
     )
 
     Try {
@@ -2335,16 +2470,22 @@ Function Publish-NsxtTransportNodeStatus {
                     }
                 }
 
-                if ($allNsxtTransportNodeStatusObject.Count -eq 0) {
-                    $addNoIssues = $true
-                }
-                if ($addNoIssues) {
-                    $allNsxtTransportNodeStatusObject = $allNsxtTransportNodeStatusObject | Sort-Object Domain, Resource, Element | ConvertTo-Html -Fragment -PreContent '<a id="nsx-tn"></a><h3>NSX Transport Node Status</h3>' -PostContent '<p>No issues found.</p>'
+                if ($PsBoundParameters.ContainsKey('outputJson')) {
+                    $json = Start-CreateOutputJsonDirectory -jsonFolder $outputJson -jsonFileSuffix $nsxtTransportJsonSuffix
+                    $allNsxtTransportNodeStatusObject | ConvertTo-JSON -Depth 10 | Out-File $json -Encoding ASCII
+                    Write-Output "JSON Created at $json"
                 } else {
-                    $allNsxtTransportNodeStatusObject = $allNsxtTransportNodeStatusObject | Sort-Object Domain, Resource, Element  | ConvertTo-Html -Fragment -PreContent '<a id="nsx-tn"></a><h3>NSX Transport Node Status</h3>' -As Table
+                    if ($allNsxtTransportNodeStatusObject.Count -eq 0) {
+                        $addNoIssues = $true
+                    }
+                    if ($addNoIssues) {
+                        $allNsxtTransportNodeStatusObject = $allNsxtTransportNodeStatusObject | Sort-Object Domain, Resource, Element | ConvertTo-Html -Fragment -PreContent '<a id="nsx-tn"></a><h3>NSX Transport Node Status</h3>' -PostContent '<p>No issues found.</p>'
+                    } else {
+                        $allNsxtTransportNodeStatusObject = $allNsxtTransportNodeStatusObject | Sort-Object Domain, Resource, Element  | ConvertTo-Html -Fragment -PreContent '<a id="nsx-tn"></a><h3>NSX Transport Node Status</h3>' -As Table
+                    }
+                    $allNsxtTransportNodeStatusObject = Convert-CssClass -htmldata $allNsxtTransportNodeStatusObject
+                    $allNsxtTransportNodeStatusObject
                 }
-                $allNsxtTransportNodeStatusObject = Convert-CssClass -htmldata $allNsxtTransportNodeStatusObject
-                $allNsxtTransportNodeStatusObject
             }
         }
     }
@@ -2377,6 +2518,13 @@ Function Publish-NsxtTransportNodeTunnelStatus {
         .EXAMPLE
         Publish-NsxtTransportNodeTunnelStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
         This example will publish the BGP status for the NSX transport node tunnels in a VMware Cloud Foundation instance for a workload domain named sfo-w01.
+
+        .EXAMPLE
+        Publish-NsxtTransportNodeTunnelStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains -outputJson F:\Reporting
+        This example will generate a json for the status of all NSX transport node tunnels in a VMware Cloud Foundation instance
+        and saves it under F:\Reporting with filename <timestamp>-nsxttntunnel-status.json
+
+
     #>
     Param (
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
@@ -2384,7 +2532,9 @@ Function Publish-NsxtTransportNodeTunnelStatus {
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
         [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
         [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [String]$outputJson
+
     )
 
     Try {
@@ -2409,19 +2559,24 @@ Function Publish-NsxtTransportNodeTunnelStatus {
                         $nsxtTransportNodeTunnelStatus = Request-NsxtTransportNodeTunnelStatus -server $server -user $user -pass $pass -domain $workloadDomain; $allNsxtTransportNodeTunnelStatusObject += $nsxtTransportNodeTunnelStatus
                     }
                 }
-
-                if ($allNsxtTransportNodeTunnelStatusObject.Count -eq 0) { $addNoIssues = $true }
-                if ($allNsxtTransportNodeTunnelStatusObject.Count -ne 0) {
-                    if ($addNoIssues) {
-                        $allNsxtTransportNodeTunnelStatusObject = $allNsxtTransportNodeTunnelStatusObject | Sort-Object Domain, Resource, Element | ConvertTo-Html -Fragment -PreContent '<a id="nsx-tn-tunnel"></a><h3>NSX Transport Node Tunnel Status</h3>' -PostContent '<p>No issues found.</p>'
-                    } else {
-                        $allNsxtTransportNodeTunnelStatusObject = $allNsxtTransportNodeTunnelStatusObject | Sort-Object Domain, Resource, Element  | ConvertTo-Html -Fragment -PreContent '<a id="nsx-tn-tunnel"></a><h3>NSX Transport Node Tunnel Status</h3>' -As Table
-                    }
-                    $allNsxtTransportNodeTunnelStatusObject = Convert-CssClass -htmlData $allNsxtTransportNodeTunnelStatusObject
+                if ($PsBoundParameters.ContainsKey('outputJson')) {
+                    $json = Start-CreateOutputJsonDirectory -jsonFolder $outputJson -jsonFileSuffix $nsxttntunnelJsonSuffix
+                    $allNsxtTransportNodeTunnelStatusObject | ConvertTo-JSON -Depth 10 | Out-File $json -Encoding ASCII
+                    Write-Output "JSON Created at $json"
                 } else {
-                    $allNsxtTransportNodeTunnelStatusObject = $allNsxtTransportNodeTunnelStatusObject | ConvertTo-Html -Fragment -PreContent '<a id="nsx-tn-tunnel"></a><h3>NSX Transport Node Tunnel Status</h3>' -PostContent '<p>No NSX Transport Node Tunnels found.</p>'
+                    if ($allNsxtTransportNodeTunnelStatusObject.Count -eq 0) { $addNoIssues = $true }
+                    if ($allNsxtTransportNodeTunnelStatusObject.Count -ne 0) {
+                        if ($addNoIssues) {
+                            $allNsxtTransportNodeTunnelStatusObject = $allNsxtTransportNodeTunnelStatusObject | Sort-Object Domain, Resource, Element | ConvertTo-Html -Fragment -PreContent '<a id="nsx-tn-tunnel"></a><h3>NSX Transport Node Tunnel Status</h3>' -PostContent '<p>No issues found.</p>'
+                        } else {
+                            $allNsxtTransportNodeTunnelStatusObject = $allNsxtTransportNodeTunnelStatusObject | Sort-Object Domain, Resource, Element  | ConvertTo-Html -Fragment -PreContent '<a id="nsx-tn-tunnel"></a><h3>NSX Transport Node Tunnel Status</h3>' -As Table
+                        }
+                        $allNsxtTransportNodeTunnelStatusObject = Convert-CssClass -htmlData $allNsxtTransportNodeTunnelStatusObject
+                    } else {
+                        $allNsxtTransportNodeTunnelStatusObject = $allNsxtTransportNodeTunnelStatusObject | ConvertTo-Html -Fragment -PreContent '<a id="nsx-tn-tunnel"></a><h3>NSX Transport Node Tunnel Status</h3>' -PostContent '<p>No NSX Transport Node Tunnels found.</p>'
+                    }
+                    $allNsxtTransportNodeTunnelStatusObject
                 }
-                $allNsxtTransportNodeTunnelStatusObject
             }
         }
     }
@@ -2454,6 +2609,12 @@ Function Publish-NsxtTier0BgpStatus {
         .EXAMPLE
         Publish-NsxtTier0BgpStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
         This example will publish the BGP status for the NSX Tier-0 gateways in a VMware Cloud Foundation instance for a workload domain names sfo-w01.
+
+        .EXAMPLE
+        Publish-NsxtTier0BgpStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains -outputJson F:\Reporting
+        This example will generate a json for the BGP status for all NSX Tier-0 gateways in a VMware Cloud Foundation instance.
+        and saves it under F:\Reporting with filename <timestamp>-nsxttier0bgp-status.json
+
     #>
     Param (
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
@@ -2461,7 +2622,8 @@ Function Publish-NsxtTier0BgpStatus {
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
         [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
         [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [String]$outputJson
     )
 
     Try {
@@ -2486,19 +2648,24 @@ Function Publish-NsxtTier0BgpStatus {
                         $nsxtTier0BgpStatus = Request-NsxtTier0BgpStatus -server $server -user $user -pass $pass -domain $workloadDomain; $allNsxtTier0BgpStatusObject += $nsxtTier0BgpStatus
                     }
                 }
-
-                if ($allNsxtTier0BgpStatusObject.Count -eq 0) { $addNoIssues = $true }
-                if ($nsxtTier0BgpStatus.Count -gt 0) {
-                    if ($addNoIssues) {
-                        $allNsxtTier0BgpStatusObject = $allNsxtTier0BgpStatusObject | Sort-Object 'NSX Manager', 'Domain', 'Tier-0 ID', 'Source Address' | ConvertTo-Html -Fragment -PreContent '<a id="nsx-t0-bgp"></a><h3>NSX Tier-0 Gateway BGP Status</h3>' -PostContent '<p>No issues found.</p>'
-                    } else {
-                        $allNsxtTier0BgpStatusObject = $allNsxtTier0BgpStatusObject | Sort-Object 'NSX Manager', 'Domain', 'Tier-0 ID', 'Source Address' | ConvertTo-Html -Fragment -PreContent '<a id="nsx-t0-bgp"></a><h3>NSX Tier-0 Gateway BGP Status</h3>' -As Table
-                    }
-                    $allNsxtTier0BgpStatusObject = Convert-CssClass -htmldata $allNsxtTier0BgpStatusObject
+                if ($PsBoundParameters.ContainsKey('outputJson')) {
+                    $json = Start-CreateOutputJsonDirectory -jsonFolder $outputJson -jsonFileSuffix $nsxttier0bgpJsonSuffix
+                    $allNsxtTier0BgpStatusObject | ConvertTo-JSON -Depth 10 | Out-File $json -Encoding ASCII
+                    Write-Output "JSON Created at $json"
                 } else {
-                    $allNsxtTier0BgpStatusObject = $allNsxtTier0BgpStatusObject | ConvertTo-Html -Fragment -PreContent '<a id="nsx-t0-bgp"></a><h3>NSX Tier-0 Gateway BGP Status</h3>' -PostContent '<p>No BGP configuration found on NSX Tier-0 Gateway(s).</p>' -As Table
+                    if ($allNsxtTier0BgpStatusObject.Count -eq 0) { $addNoIssues = $true }
+                    if ($nsxtTier0BgpStatus.Count -gt 0) {
+                        if ($addNoIssues) {
+                            $allNsxtTier0BgpStatusObject = $allNsxtTier0BgpStatusObject | Sort-Object 'NSX Manager', 'Domain', 'Tier-0 ID', 'Source Address' | ConvertTo-Html -Fragment -PreContent '<a id="nsx-t0-bgp"></a><h3>NSX Tier-0 Gateway BGP Status</h3>' -PostContent '<p>No issues found.</p>'
+                        } else {
+                            $allNsxtTier0BgpStatusObject = $allNsxtTier0BgpStatusObject | Sort-Object 'NSX Manager', 'Domain', 'Tier-0 ID', 'Source Address' | ConvertTo-Html -Fragment -PreContent '<a id="nsx-t0-bgp"></a><h3>NSX Tier-0 Gateway BGP Status</h3>' -As Table
+                        }
+                        $allNsxtTier0BgpStatusObject = Convert-CssClass -htmldata $allNsxtTier0BgpStatusObject
+                    } else {
+                        $allNsxtTier0BgpStatusObject = $allNsxtTier0BgpStatusObject | ConvertTo-Html -Fragment -PreContent '<a id="nsx-t0-bgp"></a><h3>NSX Tier-0 Gateway BGP Status</h3>' -PostContent '<p>No BGP configuration found on NSX Tier-0 Gateway(s).</p>' -As Table
+                    }
+                    $allNsxtTier0BgpStatusObject
                 }
-                $allNsxtTier0BgpStatusObject
             }
         }
     }
@@ -2536,6 +2703,12 @@ Function Publish-SnapshotStatus {
         .EXAMPLE
         Publish-SnapshotStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
         This example will publish the snapshot status for the SDDC Manager, vCenter Server instance, and NSX Edge nodes managed by SDDC Manager for a workload domain names sfo-w01.
+
+        .EXAMPLE
+        Publish-SnapshotStatus -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains -outputJson F:\Reporting
+        This example will generate a json for the snapshot status for the SDDC Manager, vCenter Server instances, and NSX Edge nodes managed by SDDC Manager.
+        and saves it under F:\Reporting with filename <timestamp>-snapshot-status.json
+
     #>
 
     Param (
@@ -2544,7 +2717,9 @@ Function Publish-SnapshotStatus {
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
         [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
         [Parameter (ParameterSetName = 'Specific-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [String]$outputJson
+
     )
 
     Try {
@@ -2583,14 +2758,21 @@ Function Publish-SnapshotStatus {
                     }
                 }
 
-                if ($allSnapshotStatusObject.Count -eq 0) { $addNoIssues = $true }
-                if ($addNoIssues) {
-                    $allSnapshotStatusObject = $allSnapshotStatusObject | Sort-Object Component, Resource, Element | ConvertTo-Html -Fragment -PreContent '<a id="infra-snapshot"></a><h3>Snapshot Status</h3>' -PostContent '<p>No issues found.</p>'
+                if ($PsBoundParameters.ContainsKey('outputJson')) {
+                    $json = Start-CreateOutputJsonDirectory -jsonFolder $outputJson -jsonFileSuffix $snapshotJsonSuffix 
+                    $allSnapshotStatusObject | ConvertTo-JSON -Depth 10 | Out-File $json -Encoding ASCII
+                    Write-Output "JSON Created at $json"
                 } else {
-                    $allSnapshotStatusObject = $allSnapshotStatusObject | Sort-Object Component, Resource, Element | ConvertTo-Html -Fragment -PreContent '<a id="infra-snapshot"></a><h3>Snapshot Status</h3>' -PostContent '<p>Only checks snapshots for SDDC Manager, vCenter Server instances, and NSX Edge nodes managed by SDDC Manager. By default, snapshots for NSX Local Manager cluster appliances are disabled and are not recommended.</p>' -As Table
+
+                    if ($allSnapshotStatusObject.Count -eq 0) { $addNoIssues = $true }
+                    if ($addNoIssues) {
+                        $allSnapshotStatusObject = $allSnapshotStatusObject | Sort-Object Component, Resource, Element | ConvertTo-Html -Fragment -PreContent '<a id="infra-snapshot"></a><h3>Snapshot Status</h3>' -PostContent '<p>No issues found.</p>'
+                    } else {
+                        $allSnapshotStatusObject = $allSnapshotStatusObject | Sort-Object Component, Resource, Element | ConvertTo-Html -Fragment -PreContent '<a id="infra-snapshot"></a><h3>Snapshot Status</h3>' -PostContent '<p>Only checks snapshots for SDDC Manager, vCenter Server instances, and NSX Edge nodes managed by SDDC Manager. By default, snapshots for NSX Local Manager cluster appliances are disabled and are not recommended.</p>' -As Table
+                    }
+                    $allSnapshotStatusObject = Convert-CssClass -htmldata $allSnapshotStatusObject
+                    $allSnapshotStatusObject
                 }
-                $allSnapshotStatusObject = Convert-CssClass -htmldata $allSnapshotStatusObject
-                $allSnapshotStatusObject
             }
         }
     }
@@ -2600,99 +2782,94 @@ Function Publish-SnapshotStatus {
 }
 Export-ModuleMember -Function Publish-SnapshotStatus
 
-Function Publish-LocalUserExpiry {
+Function Publish-NsxtHealthNonSOS {
+
     <#
 		.SYNOPSIS
-        Request and publish Local User Expiry
+        Publish NSX Manager Health only for health checks which are not a part of SOS Utility NSX health. Data obtained is a subset of Publish-NsxtCombinedHealth cmdlet.
 
         .DESCRIPTION
-        The Publish-LocalUserExpiry cmdlet checks the expiry for local users across the VMware Cloud Foundation
-        instance and prepares the data to be published to an HTML report. The cmdlet connects to SDDC Manager using the
+        The Publish-NsxtHealthNonSOS cmdlet performs additional checks outside of SOS Utility to get the health of NSX Manager on the VMware Cloud Foundation instance
+        and prepares the data to be published to an HTML report. Data obtained is subset of Publish-NsxtCombinedHealth cmdlet. The cmdlet connects to SDDC Manager using the
         -server, -user, and password values:
-        - Validates that network connectivity is available to the SDDC Manager instance
-        - Performs checks on the local OS users and outputs the results
+        - Validates that network connectivity and autehentication is available to SDDC Manager
+        - Validates that network connectivity and autehentication is available to NSX Manager
+        - Performs health checks and outputs the results
 
         .EXAMPLE
-        Publish-LocalUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -allDomains
-        This example checks the expiry for local OS users for all Workload Domains across the VMware Cloud Foundation instance.
+        Publish-NsxtHealthNonSOS -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
+        This example checks NSX Manager health outside SOS Utility for all Workload Domains across the VMware Cloud Foundation instance.
 
         .EXAMPLE
-        Publish-LocalUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -workloadDomain sfo-w01
-        This example checks the expiry for local OS users for a single Workload Domain in a VMware Cloud Foundation instance.
+        Publish-NsxtHealthNonSOS -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
+        This example checks NSX Manager health outside SOS Utility for a single Workload Domain in a VMware Cloud Foundation instance.
 
         .EXAMPLE
-        Publish-LocalUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -allDomains -failureOnly
-        This example checks the expiry for local OS users for all Workload Domains across the VMware Cloud Foundation instance but only reports issues.
+        Publish-NsxtHealthNonSOS -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains -failureOnly
+        This example checks NSX Manager health outside SOS Utility for all Workload Domains across the VMware Cloud Foundation instance but only reports issues.
+
+        .EXAMPLE
+        Publish-NsxtHealthNonSOS -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains -outputJson F:\Reporting
+        This example checks NSX Manager health outside SOS Utility for all Workload Domains across the VMware Cloud Foundation instance and
+       and saves it as JSON under F:\Reporting with filename <timestamp>-nsxtcombinedhealthnonsos-status.json
+
     #>
 
     Param (
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcRootPass,
         [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
+        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [String]$outputJson
     )
 
-    Try {
-        $allPasswordExpiryObject = New-Object System.Collections.ArrayList
+        Try {
+        $allNsxtHealthObject = New-Object System.Collections.ArrayList
         $allWorkloadDomains = Get-VCFWorkloadDomain
-        $singleWorkloadDomain = Get-VCFWorkloadDomain | Where-Object {$_.name -eq $workloadDomain}
-        if ($PsBoundParameters.ContainsKey('failureOnly')) {
-            if ($PsBoundParameters.ContainsKey("allDomains")) {
-                $sddcPasswordExpiry = Request-SddcManagerUserExpiry -server $server -user $user -pass $pass -rootPass $sddcRootPass -failureOnly; $allPasswordExpiryObject += $sddcPasswordExpiry
-                $vrslcmPasswordExpiry = Request-vRslcmUserExpiry -server $server -user $user -pass $pass -failureOnly; $allPasswordExpiryObject += $vrslcmPasswordExpiry
-                $vcenterPasswordExpiry = Request-vCenterUserExpiry -server $server -user $user -pass $pass -alldomains -failureOnly; $allPasswordExpiryObject += $vcenterPasswordExpiry
-                $allWorkloadDomains = Get-VCFWorkloadDomain
-                foreach ($domain in $allWorkloadDomains ) {
-                    $nsxtManagerPasswordExpiry = Request-NsxtManagerUserExpiry -server $server -user $user -pass $pass -domain $domain.name -failureOnly; $allPasswordExpiryObject += $nsxtManagerPasswordExpiry
-                    $nsxtEdgePasswordExpiry = Request-NsxtEdgeUserExpiry -server $server -user $user -pass $pass -domain $domain.name -failureOnly; $allPasswordExpiryObject += $nsxtEdgePasswordExpiry
-                }
-            } else {
-                if ($singleWorkloadDomain.type -eq "MANAGEMENT") {
-                    $sddcPasswordExpiry = Request-SddcManagerUserExpiry -server $server -user $user -pass $pass -rootPass $sddcRootPass -failureOnly; $allPasswordExpiryObject += $sddcPasswordExpiry
-                    $vrslcmPasswordExpiry = Request-vRslcmUserExpiry -server $server -user $user -pass $pass -failureOnly; $allPasswordExpiryObject += $vrslcmPasswordExpiry
-                }
-                $vcenterPasswordExpiry = Request-vCenterUserExpiry -server $server -user $user -pass $pass -workloadDomain $workloadDomain -failureOnly; $allPasswordExpiryObject += $vcenterPasswordExpiry
-                $nsxtManagerPasswordExpiry = Request-NsxtManagerUserExpiry -server $server -user $user -pass $pass -domain $workloadDomain -failureOnly; $allPasswordExpiryObject += $nsxtManagerPasswordExpiry
-                $nsxtEdgePasswordExpiry = Request-NsxtEdgeUserExpiry -server $server -user $user -pass $pass -domain $workloadDomain -failureOnly; $allPasswordExpiryObject += $nsxtEdgePasswordExpiry
+        if ($PsBoundParameters.ContainsKey("allDomains") -and $PsBoundParameters.ContainsKey("failureOnly")) {
+            foreach ($domain in $allWorkloadDomains ) {
+                $nsxtVidmStatus = Request-NsxtVidmStatus -server $server -user $user -pass $pass -domain $domain.name -failureOnly; $allNsxtHealthObject += $nsxtVidmStatus
+                $nsxtComputeManagerStatus = Request-NsxtComputeManagerStatus -server $server -user $user -pass $pass -domain $domain.name -failureOnly; $allNsxtHealthObject += $nsxtComputeManagerStatus
             }
-        } else {
-            if ($PsBoundParameters.ContainsKey("allDomains")) {
-                $sddcPasswordExpiry = Request-SddcManagerUserExpiry -server $server -user $user -pass $pass -rootPass $sddcRootPass; $allPasswordExpiryObject += $sddcPasswordExpiry
-                $vrslcmPasswordExpiry = Request-vRslcmUserExpiry -server $server -user $user -pass $pass; $allPasswordExpiryObject += $vrslcmPasswordExpiry
-                $vcenterPasswordExpiry = Request-vCenterUserExpiry -server $server -user $user -pass $pass -alldomains; $allPasswordExpiryObject += $vcenterPasswordExpiry
-                $allWorkloadDomains = Get-VCFWorkloadDomain
-                foreach ($domain in $allWorkloadDomains ) {
-                    $nsxtManagerPasswordExpiry = Request-NsxtManagerUserExpiry -server $server -user $user -pass $pass -domain $domain.name; $allPasswordExpiryObject += $nsxtManagerPasswordExpiry
-                    $nsxtEdgePasswordExpiry = Request-NsxtEdgeUserExpiry -server $server -user $user -pass $pass -domain $domain.name; $allPasswordExpiryObject += $nsxtEdgePasswordExpiry
-                }
-            } else {
-                if ($singleWorkloadDomain.type -eq "MANAGEMENT") {
-                    $sddcPasswordExpiry = Request-SddcManagerUserExpiry -server $server -user $user -pass $pass -rootPass $sddcRootPass; $allPasswordExpiryObject += $sddcPasswordExpiry
-                    $vrslcmPasswordExpiry = Request-vRslcmUserExpiry -server $server -user $user -pass $pass; $allPasswordExpiryObject += $vrslcmPasswordExpiry
-                }
-                $vcenterPasswordExpiry = Request-vCenterUserExpiry -server $server -user $user -pass $pass -workloadDomain $workloadDomain; $allPasswordExpiryObject += $vcenterPasswordExpiry
-                $nsxtManagerPasswordExpiry = Request-NsxtManagerUserExpiry -server $server -user $user -pass $pass -domain $workloadDomain; $allPasswordExpiryObject += $nsxtManagerPasswordExpiry
-                $nsxtEdgePasswordExpiry = Request-NsxtEdgeUserExpiry -server $server -user $user -pass $pass -domain $workloadDomain; $allPasswordExpiryObject += $nsxtEdgePasswordExpiry
+        } elseif ($PsBoundParameters.ContainsKey("allDomains")) {
+            foreach ($domain in $allWorkloadDomains ) {
+                $nsxtVidmStatus = Request-NsxtVidmStatus -server $server -user $user -pass $pass -domain $domain.name; $allNsxtHealthObject += $nsxtVidmStatus
+                $nsxtComputeManagerStatus = Request-NsxtComputeManagerStatus -server $server -user $user -pass $pass -domain $domain.name; $allNsxtHealthObject += $nsxtComputeManagerStatus
             }
         }
 
-        if ($allPasswordExpiryObject.Count -eq 0) { $addNoIssues = $true }
-        if ($addNoIssues) {
-            $allPasswordExpiryObject = $allPasswordExpiryObject | Sort-Object Resource, Component | ConvertTo-Html -Fragment -PreContent '<a id="security-password"></a><h3>Password Expiry Health Status</h3>' -PostContent '<p>No issues found.</p>'
-        } else {
-            $allPasswordExpiryObject = $allPasswordExpiryObject | Sort-Object Resource, Component | ConvertTo-Html -Fragment -PreContent '<a id="security-password"></a><h3>Password Expiry Health Status</h3>' -As Table
+        if ($PsBoundParameters.ContainsKey("workloadDomain") -and $PsBoundParameters.ContainsKey("failureOnly")) {
+            $nsxtVidmStatus = Request-NsxtVidmStatus -server $server -user $user -pass $pass -domain $workloadDomain -failureOnly; $allNsxtHealthObject += $nsxtVidmStatus
+            $nsxtComputeManagerStatus = Request-NsxtComputeManagerStatus -server $server -user $user -pass $pass -domain $workloadDomain -failureOnly; $allNsxtHealthObject += $nsxtComputeManagerStatus
+        } elseif ($PsBoundParameters.ContainsKey("workloadDomain")) {
+            $nsxtVidmStatus = Request-NsxtVidmStatus -server $server -user $user -pass $pass -domain $workloadDomain; $allNsxtHealthObject += $nsxtVidmStatus
+            $nsxtComputeManagerStatus = Request-NsxtComputeManagerStatus -server $server -user $user -pass $pass -domain $workloadDomain; $allNsxtHealthObject += $nsxtComputeManagerStatus
         }
-        $allPasswordExpiryObject = Convert-CssClass -htmldata $allPasswordExpiryObject
-        $allPasswordExpiryObject
+
+        if ($PsBoundParameters.ContainsKey("outputJson")) {
+            $json = Start-CreateOutputJsonDirectory -jsonFolder $outputJson -jsonFileSuffix $nsxtCombinedHealthNonSOSJsonSuffix
+            $allNsxtHealthObject | ConvertTo-JSON -Depth 10 | Out-File $json -Encoding ASCII
+            Write-Output "JSON Created at $json"
+        } else {
+            if ($allNsxtHealthObject.Count -eq 0) { $addNoIssues = $true }
+            if ($addNoIssues) {
+                $allNsxtHealthObject = $allNsxtHealthObject | Sort-Object Component, Resource | ConvertTo-Html -Fragment -PreContent '<a id="nsx-local-manager"></a><h3>NSX Manager Health Status - Non SOS</h3>' -PostContent '<p>No issues found.</p>'
+            } else {
+                $allNsxtHealthObject = $allNsxtHealthObject | Sort-Object Component, Resource | ConvertTo-Html -Fragment -PreContent '<a id="nsx-local-manager"></a><h3>NSX Manager Health Status - Non SOS</h3>' -As Table
+            }
+            $allNsxtHealthObject = Convert-CssClass -htmldata $allNsxtHealthObject
+            $allNsxtHealthObject
+        }
+
     }
     Catch {
         Debug-CatchWriter -object $_
     }
 }
-Export-ModuleMember -Function Publish-LocalUserExpiry
+Export-ModuleMember -Function Publish-NsxtHealthNonSOS
+
 
 Function Publish-NsxtCombinedHealth {
     <#
@@ -2718,6 +2895,7 @@ Function Publish-NsxtCombinedHealth {
         .EXAMPLE
         Publish-NsxtCombinedHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -json <json-file> -allDomains -failureOnly
         This example checks NSX Manager health for all Workload Domains across the VMware Cloud Foundation instance but only reports issues.
+
     #>
 
     Param (
@@ -2757,6 +2935,7 @@ Function Publish-NsxtCombinedHealth {
             $nsxtHtml = Publish-NsxtHealth -json $json; $allNsxtHealthObject += $nsxtHtml
         }
 
+
         if ($allNsxtHealthObject.Count -eq 0) { $addNoIssues = $true }
         if ($addNoIssues) {
             $allNsxtHealthObject = $allNsxtHealthObject | Sort-Object Component, Resource | ConvertTo-Html -Fragment -PreContent '<a id="nsx-local-manager"></a><h3>NSX Manager Health Status</h3>' -PostContent '<p>No issues found.</p>'
@@ -2765,6 +2944,7 @@ Function Publish-NsxtCombinedHealth {
         }
         $allNsxtHealthObject = Convert-CssClass -htmldata $allNsxtHealthObject
         $allNsxtHealthObject
+
     }
     Catch {
         Debug-CatchWriter -object $_
@@ -2780,474 +2960,140 @@ Function Publish-StorageCapacityHealth {
         .DESCRIPTION
         The Publish-StorageCapacityHealth cmdlet checks the storage usage status for SDDC Manager, vCenter Server,
         Datastores and ESXi hosts, in a VMware Cloud Foundation instance and prepares the data to be published
-        to an HTML report or plain text to console. The cmdlet connects to SDDC Manager using the -server, -user, -password and -rootPass values:
+        to an HTML report or plain text to console. The cmdlet connects to SDDC Manager using the -server, -user, -pass, -localUser, and -localPass values:
         - Validates the network connectivity and authantication to the SDDC Manager instance
         - Performs checks on the storage usage status and outputs the results
 
         .EXAMPLE
-        Publish-StorageCapacityHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -rootPass VMw@re1! -allDomains
+        Publish-StorageCapacityHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -localUser vcf -localPass VMw@re1! -allDomains
         This example will publish storage usage status for SDDC Manager, vCenter Server instances, ESXi hosts, and datastores in a VMware Cloud Foundation instance
 
         .EXAMPLE
-        Publish-StorageCapacityHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -rootPass VMw@re1! -allDomains -failureOnly
+        Publish-StorageCapacityHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -localUser vcf -localPass VMw@re1! -allDomains -failureOnly
         This example will publish storage usage status for SDDC Manager, vCenter Server instances, ESXi hosts, and datastores in a VMware Cloud Foundation instance but only for the failed items.
 
         .EXAMPLE
-        Publish-StorageCapacityHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -rootPass VMw@re1! -workloadDomain sfo-w01
+        Publish-StorageCapacityHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -localUser vcf -localPass VMw@re1! -workloadDomain sfo-w01
         This example will publish storage usage status for a specific Workload Domain in a VMware Cloud Foundation instance
+
+        .EXAMPLE
+        Publish-StorageCapacityHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -localUser vcf -localPass VMw@re1! -workloadDomain sfo-w01 -outputJson F:\Reporting
+        This example will publish storage usage status for a specific Workload Domain in a VMware Cloud Foundation instance
+        and saves it as JSON under F:\Reporting with filename <timestamp>-storagecapacityhealth-status.json
+
     #>
 
     Param (
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$rootPass,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$localUser,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$localPass,
         [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
         [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [String]$outputJson
     )
 
     Try {
         if (Test-VCFConnection -server $server) {
             if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
+                $allWorkloadDomains = Get-VCFWorkloadDomain
+                $singleWorkloadDomain = Get-VCFWorkloadDomain | Where-Object {$_.name -eq $workloadDomain}
                 $allStorageCapacityHealth = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('failureOnly')) { $failureOnlySwitch = "-failureOnly" }
 
                 if ($PsBoundParameters.ContainsKey("allDomains")) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    $sddcManagerStorageHealth = Invoke-Expression "Request-SddcManagerStorageHealth -server $server -user $user -pass $pass -rootPass $rootPass $($failureOnlySwitch)"
-                    foreach ($domain in $allWorkloadDomains ) {
-                        $vCenterStorageHealth = Invoke-Expression "Request-VcenterStorageHealth -server $server -user $user -pass $pass -domain $($domain.name) $($failureOnlySwitch)"; $allVcenterStorageHealth += $vCenterStorageHealth
-                        $esxiStorageCapacity = Invoke-Expression "Request-EsxiStorageCapacity -server $server -user $user -pass $pass -domain $($domain.name) $($failureOnlySwitch)"; $allEsxiStorageCapacity += $esxiStorageCapacity
-                        $datastoreStorageCapacity = Invoke-Expression "Request-DatastoreStorageCapacity -server $server -user $user -pass $pass -domain $($domain.name) $($failureOnlySwitch)"; $allDatastoreStorageCapacity += $datastoreStorageCapacity
+                    if ($PsBoundParameters.ContainsKey("failureOnly")) {
+                        $sddcManagerStorageHealth = Request-SddcManagerStorageHealth -server $server -user $user -pass $pass -localUser $localUser -localPass $localPass -failureOnly;
+                        foreach ($domain in $allWorkloadDomains ) {
+                            $vCenterStorageHealth = Request-VcenterStorageHealth -server $server -user $user -pass $pass -domain $domain.name -failureOnly; $allVcenterStorageHealth += $vCenterStorageHealth
+                            $esxiStorageCapacity = Request-EsxiStorageCapacity -server $server -user $user -pass $pass -domain $domain.name -failureOnly; $allEsxiStorageCapacity += $esxiStorageCapacity
+                            $datastoreStorageCapacity = Request-DatastoreStorageCapacity -server $server -user $user -pass $pass -domain $domain.name -failureOnly; $allDatastoreStorageCapacity += $datastoreStorageCapacity
+                        }
+                    } else {
+                        $sddcManagerStorageHealth = Request-SddcManagerStorageHealth -server $server -user $user -pass $pass -localUser $localUser -localPass $localPass
+                        foreach ($domain in $allWorkloadDomains ) {
+                            $vCenterStorageHealth = Request-VcenterStorageHealth -server $server -user $user -pass $pass -domain $domain.name; $allVcenterStorageHealth += $vCenterStorageHealth
+                            $esxiStorageCapacity = Request-EsxiStorageCapacity -server $server -user $user -pass $pass -domain $domain.name; $allEsxiStorageCapacity += $esxiStorageCapacity
+                            $datastoreStorageCapacity = Request-DatastoreStorageCapacity -server $server -user $user -pass $pass -domain $domain.name; $allDatastoreStorageCapacity += $datastoreStorageCapacity
+                        }
                     }
-                } elseif ($PsBoundParameters.ContainsKey("workloadDomain")) {
-                    $singleWorkloadDomain = Get-VCFWorkloadDomain | Where-Object {$_.name -eq $workloadDomain}
-                    if ($singleWorkloadDomain.type -eq "MANAGEMENT") {
-                        $sddcManagerStorageHealth = Invoke-Expression "Request-SddcManagerStorageHealth -server $server -user $user -pass $pass -rootPass $rootPass $($failureOnlySwitch)"
+                } else {
+                    if ($PsBoundParameters.ContainsKey("failureOnly")) {
+                        if ($singleWorkloadDomain.type -eq "MANAGEMENT") {
+                            $sddcManagerStorageHealth = Request-SddcManagerStorageHealth -server $server -user $user -pass $pass -localUser $localUser -localPass $localPass -failureOnly
+                        }
+                        $vCenterStorageHealth = Request-VcenterStorageHealth -server $server -user $user -pass $pass -domain $workloadDomain -failureOnly; $allVcenterStorageHealth += $vCenterStorageHealth
+                        $esxiStorageCapacity = Request-EsxiStorageCapacity -server $server -user $user -pass $pass -domain $workloadDomain -failureOnly; $allEsxiStorageCapacity += $esxiStorageCapacity
+                        $datastoreStorageCapacity = Request-DatastoreStorageCapacity -server $server -user $user -pass $pass -domain $workloadDomain -failureOnly; $allDatastoreStorageCapacity += $datastoreStorageCapacity
+                    } else {
+                        if ($singleWorkloadDomain.type -eq "MANAGEMENT") {
+                            $sddcManagerStorageHealth = Request-SddcManagerStorageHealth -server $server -user $user -pass $pass -localUser $localUser -localPass $localPass
+                        }
+                        $vCenterStorageHealth = Request-VcenterStorageHealth -server $server -user $user -pass $pass -domain $workloadDomain; $allVcenterStorageHealth += $vCenterStorageHealth
+                        $esxiStorageCapacity = Request-EsxiStorageCapacity -server $server -user $user -pass $pass -domain $workloadDomain; $allEsxiStorageCapacity += $esxiStorageCapacity
+                        $datastoreStorageCapacity = Request-DatastoreStorageCapacity -server $server -user $user -pass $pass -domain $workloadDomain; $allDatastoreStorageCapacity += $datastoreStorageCapacity
                     }
-                    $vCenterStorageHealth = Invoke-Expression "Request-VcenterStorageHealth -server $server -user $user -pass $pass -domain $workloadDomain $($failureOnlySwitch)"; $allVcenterStorageHealth += $vCenterStorageHealth
-                    $esxiStorageCapacity = Invoke-Expression "Request-EsxiStorageCapacity -server $server -user $user -pass $pass -domain $workloadDomain $($failureOnlySwitch)"; $allEsxiStorageCapacity += $esxiStorageCapacity
-                    $datastoreStorageCapacity = Invoke-Expression "Request-DatastoreStorageCapacity -server $server -user $user -pass $pass -domain $workloadDomain $($failureOnlySwitch)"; $allDatastoreStorageCapacity += $datastoreStorageCapacity
                 }
 
-                if ($sddcManagerStorageHealth.Count -eq 0) { $addNoIssues = $true }
-                if ($addNoIssues) {
-                    $sddcManagerStorageHealth = $sddcManagerStorageHealth | ConvertTo-Html -Fragment -PreContent '<a id="storage-sddcmanager"></a><h3>SDDC Manager Disk Health Status</h3>' -PostContent '<p>No Issues Found.</p>'
-                } else {
-                    $sddcManagerStorageHealth = $sddcManagerStorageHealth | ConvertTo-Html -Fragment -PreContent '<a id="storage-sddcmanager"></a><h3>SDDC Manager Disk Health Status</h3>' -As Table
-                }
-                $sddcManagerStorageHealth = Convert-CssClass -htmldata $sddcManagerStorageHealth; $allStorageCapacityHealth += $sddcManagerStorageHealth
+                if ($PsBoundParameters.ContainsKey('outputJson')) {
+                    $json = Start-CreateOutputJsonDirectory -jsonFolder $outputJson -jsonFileSuffix $storageCapacityHealthJsonSuffix
+                    $combinedjson = @{
+                        "sddc-manager" = $sddcManagerStorageHealth
+                        "vcenter" = $allVcenterStorageHealth
+                        "esxi" = $allEsxiStorageCapacity
+                        "datastore" = $allDatastoreStorageCapacity
+                    }
+                    $combinedJson | ConvertTo-JSON -Depth 10 | Out-File $json -Encoding ASCII
+					Write-Output "JSON Created at $json"
 
-                if ($allVcenterStorageHealth.Count -eq 0) { $addNoIssues = $true }
-                if ($addNoIssues) {
-                    $allVcenterStorageHealth = $allVcenterStorageHealth | Sort-Object FQDN, Filesystem | ConvertTo-Html -Fragment -PreContent '<a id="storage-vcenter"></a><h3>vCenter Server Disk Health</h3>' -PostContent '<p>No Issues Found.</p>'
                 } else {
-                    $allVcenterStorageHealth = $allVcenterStorageHealth | Sort-Object  FQDN, Filesystem | ConvertTo-Html -Fragment -PreContent '<a id="storage-vcenter"></a><h3>vCenter Server Disk Health</h3>' -As Table
-                }
-                $allVcenterStorageHealth = Convert-CssClass -htmldata $allVcenterStorageHealth; $allStorageCapacityHealth += $allVcenterStorageHealth
+                    if ($sddcManagerStorageHealth.Count -eq 0) { $addNoIssues = $true }
+                    if ($addNoIssues) {
+                        $sddcManagerStorageHealth = $sddcManagerStorageHealth | ConvertTo-Html -Fragment -PreContent '<a id="storage-sddcmanager"></a><h3>SDDC Manager Disk Health Status</h3>' -PostContent '<p>No Issues Found.</p>'
+                    } else {
+                        $sddcManagerStorageHealth = $sddcManagerStorageHealth | ConvertTo-Html -Fragment -PreContent '<a id="storage-sddcmanager"></a><h3>SDDC Manager Disk Health Status</h3>' -As Table
+                    }
+                    $sddcManagerStorageHealth = Convert-CssClass -htmldata $sddcManagerStorageHealth
 
-                if ($allEsxiStorageCapacity.Count -eq 0) { $addNoIssues = $true }
-                if ($addNoIssues) {
-                    $allEsxiStorageCapacity = $allEsxiStorageCapacity | Sort-Object Domain, 'ESXi FQDN', 'Volume Name' | ConvertTo-Html -Fragment -PreContent '<a id="storage-esxi"></a><h3>ESXi Host Local Volume Capacity</h3>' -PostContent '<p>No Issues Found.</p>'
-                } else {
-                    $allEsxiStorageCapacity = $allEsxiStorageCapacity | Sort-Object Domain, 'ESXi FQDN', 'Volume Name' | ConvertTo-Html -Fragment -PreContent '<a id="storage-esxi"></a><h3>ESXi Host Local Volume Capacity</h3>' -As Table
-                }
-                $allEsxiStorageCapacity = Convert-CssClass -htmldata $allEsxiStorageCapacity; $allStorageCapacityHealth += $allEsxiStorageCapacity
+                    if ($allVcenterStorageHealth.Count -eq 0) { $addNoIssues = $true }
+                    if ($addNoIssues) {
+                        $allVcenterStorageHealth = $allVcenterStorageHealth | Sort-Object FQDN, Filesystem | ConvertTo-Html -Fragment -PreContent '<a id="storage-vcenter"></a><h3>vCenter Server Disk Health</h3>' -PostContent '<p>No Issues Found.</p>'
+                    } else {
+                        $allVcenterStorageHealth = $allVcenterStorageHealth | Sort-Object  FQDN, Filesystem | ConvertTo-Html -Fragment -PreContent '<a id="storage-vcenter"></a><h3>vCenter Server Disk Health</h3>' -As Table
+                    }
+                    $allVcenterStorageHealth = Convert-CssClass -htmldata $allVcenterStorageHealth
 
-                if ($allDatastoreStorageCapacity.Count -eq 0) { $addNoIssues = $true }
-                if ($addNoIssues) {
-                    $allDatastoreStorageCapacity = $allDatastoreStorageCapacity | Sort-Object 'vCenter Server', 'Datastore Name' | ConvertTo-Html -Fragment -PreContent '<a id="storage-datastore"></a><h3>Datastore Space Usage Report</h3>' -PostContent '<p>No Issues Found.</p>'
-                } else {
-                    $allDatastoreStorageCapacity = $allDatastoreStorageCapacity | Sort-Object 'vCenter Server', 'Datastore Name' | ConvertTo-Html -Fragment -PreContent '<a id="storage-datastore"></a><h3>Datastore Space Usage Report</h3>' -As Table
+                    if ($allEsxiStorageCapacity.Count -eq 0) { $addNoIssues = $true }
+                    if ($addNoIssues) {
+                        $allEsxiStorageCapacity = $allEsxiStorageCapacity | Sort-Object Domain, 'ESXi FQDN', 'Volume Name' | ConvertTo-Html -Fragment -PreContent '<a id="storage-esxi"></a><h3>ESXi Host Local Volume Capacity</h3>' -PostContent '<p>No Issues Found.</p>'
+                    } else {
+                        $allEsxiStorageCapacity = $allEsxiStorageCapacity | Sort-Object Domain, 'ESXi FQDN', 'Volume Name' | ConvertTo-Html -Fragment -PreContent '<a id="storage-esxi"></a><h3>ESXi Host Local Volume Capacity</h3>' -As Table
+                    }
+                    $allEsxiStorageCapacity = Convert-CssClass -htmldata $allEsxiStorageCapacity
+
+                    if ($allDatastoreStorageCapacity.Count -eq 0) { $addNoIssues = $true }
+                    if ($addNoIssues) {
+                        $allDatastoreStorageCapacity = $allDatastoreStorageCapacity | Sort-Object 'vCenter Server', 'Datastore Name' | ConvertTo-Html -Fragment -PreContent '<a id="storage-datastore"></a><h3>Datastore Space Usage Report</h3>' -PostContent '<p>No Issues Found.</p>'
+                    } else {
+                        $allDatastoreStorageCapacity = $allDatastoreStorageCapacity | Sort-Object 'vCenter Server', 'Datastore Name' | ConvertTo-Html -Fragment -PreContent '<a id="storage-datastore"></a><h3>Datastore Space Usage Report</h3>' -As Table
+                    }
+                    $allDatastoreStorageCapacity = Convert-CssClass -htmldata $allDatastoreStorageCapacity
+
+                    $allStorageCapacityHealth += $sddcManagerStorageHealth
+                    $allStorageCapacityHealth += $allVcenterStorageHealth
+                    $allStorageCapacityHealth += $allEsxiStorageCapacity
+                    $allStorageCapacityHealth += $allDatastoreStorageCapacity
+                    $allStorageCapacityHealth
                 }
-                $allDatastoreStorageCapacity = Convert-CssClass -htmldata $allDatastoreStorageCapacity; $allStorageCapacityHealth += $allDatastoreStorageCapacity
-                $allStorageCapacityHealth
             }
         }
-    } Catch {
+    }
+    Catch {
         Debug-CatchWriter -object $_
     }
 }
 Export-ModuleMember -Function Publish-StorageCapacityHealth
-
-Function Request-SddcManagerUserExpiry {
-    <#
-		.SYNOPSIS
-        Checks the expiry for additional local OS users in an SDDC Manager appliance.
-
-        .DESCRIPTION
-        The Request-SddcManagerUserExpiry cmdlet checks the expiry for additional local users in the SDDC Manager
-        appliance not reported in the SoS Health Check. The cmdlet connects to SDDC Manager using the -server, -user,
-        and password values:
-        - Validates that network connectivity is available to the SDDC Manager instance
-        - Validates that network connectivity is available to the vCenter Server instance
-        - Performs checks on the local OS users in an SDDC Manager instance and outputs the results
-
-        .EXAMPLE
-        Request-SddcManagerUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -rootPass VMw@re1!
-        This example checks the expiry for all local OS users in the SDDC Manager appliance.
-
-        .EXAMPLE
-        Request-SddcManagerUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -rootPass VMw@re1! -failureOnly
-        This example checks the expiry for all local OS users in the SDDC Manager appliance but only reports issues.
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$rootPass,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                if (($vcfVcenterDetails = Get-vCenterServerDetail -server $server -user $user -pass $pass -domainType MANAGEMENT)) {
-                    if (Test-VsphereConnection -server $($vcfVcenterDetails.fqdn)) {
-                        if (Test-VsphereAuthentication -server $vcfVcenterDetails.fqdn -user $vcfVcenterDetails.ssoAdmin -pass $vcfVcenterDetails.ssoAdminPass) {
-                            $customObject = New-Object System.Collections.ArrayList
-                            $elementObject = Request-LocalUserExpiry -fqdn $server -component SDDC -rootPass $rootPass -checkUser backup
-                            if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                    $customObject += $elementObject
-                                }
-                            } else {
-                                $customObject += $elementObject
-                            }
-                            $elementObject = Request-LocalUserExpiry -fqdn $server -component SDDC -rootPass $rootPass -checkUser root
-                            if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                    $customObject += $elementObject
-                                }
-                            } else {
-                                $customObject += $elementObject
-                            }
-                            $elementObject = Request-LocalUserExpiry -fqdn $server -component SDDC -rootPass $rootPass -checkUser vcf
-                            if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                    $customObject += $elementObject
-                                }
-                            } else {
-                                $customObject += $elementObject
-                            }
-                            $customObject | Sort-Object Component, Resource # Output Results
-                        }
-                        Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
-                    }
-                }
-            }
-        }
-    }
-    Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Request-SddcManagerUserExpiry
-
-Function Request-NsxtEdgeUserExpiry {
-    <#
-        .SYNOPSIS
-        Checks the expiry for local OS users in an an NSX Edge node appliance.
-
-        .DESCRIPTION
-        The Request-NsxtEdgeUserExpiry cmdlet checks the expiry for additional local OS users for an NSX Edge node.
-        The cmdlet connects to SDDC Manager using the -server, -user, and password values:
-        - Validates that network connectivity is available to the SDDC Manager instance
-        - Validates that network connectivity is available to the vCenter Server instance
-        - Performs checks on the local OS users for NSX Manager appliances and outputs the results
-
-        .EXAMPLE
-        Request-NsxtEdgeUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -domain sfo-w01
-        This example checks the expiry for local OS users for the NSX Edge node appliances for a specific workload domain.
-
-        .EXAMPLE
-        Request-NsxtEdgeUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -domain sfo-w01 -failureOnly
-        This example checks the expiry for local OS users for the NSX Edge node appliances for a specific workload domain but only reports issues.
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$domain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                if (($vcfVcenterDetails = Get-vCenterServerDetail -server $server -user $user -pass $pass -domain $domain)) {
-                    if (Test-VsphereConnection -server $($vcfVcenterDetails.fqdn)) {
-                        if (Test-VsphereAuthentication -server $vcfVcenterDetails.fqdn -user $vcfVcenterDetails.ssoAdmin -pass $vcfVcenterDetails.ssoAdminPass) {
-                            if (Get-VCFWorkloadDomain | Where-Object { $_.name -eq $domain }) {
-                                if (($vcfNsxDetails = Get-NsxtServerDetail -fqdn $server -username $user -password $pass -domain $domain)) {
-                                    if (($vcfNsxEdgeDetails = Get-VCFEdgeCluster | Where-Object { $_.nsxtCluster.vipFQDN -eq $vcfNsxDetails.fqdn })) {
-                                        $customObject = New-Object System.Collections.ArrayList
-                                        foreach ($nsxtEdgeNode in $vcfNsxEdgeDetails.edgeNodes) {
-                                            $rootPass = (Get-VCFCredential | Where-Object { $_.credentialType -eq 'SSH' -and $_.resource.resourceName -eq $nsxtEdgeNode.hostname -and $_.resource.domainName -eq $domain }).password
-                                            $elementObject = Request-LocalUserExpiry -fqdn $nsxtEdgeNode.hostname -component 'NSX Edge' -rootPass $rootPass -checkUser admin
-                                            if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                                if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                                    $customObject += $elementObject
-                                                }
-                                            } else {
-                                                $customObject += $elementObject
-                                            }
-                                            $elementObject = Request-LocalUserExpiry -fqdn $nsxtEdgeNode.hostname -component 'NSX Edge' -rootPass $rootPass -checkUser audit
-                                            if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                                if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                                    $customObject += $elementObject
-                                                }
-                                            } else {
-                                                $customObject += $elementObject
-                                            }
-                                            $elementObject = Request-LocalUserExpiry -fqdn $nsxtEdgeNode.hostname -component 'NSX Edge' -rootPass $rootPass -checkUser root
-                                            if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                                if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                                    $customObject += $elementObject
-                                                }
-                                            } else {
-                                                $customObject += $elementObject
-                                            }
-                                        }
-                                    }
-                                    $customObject | Sort-Object Component, Resource # Output Results
-                                }
-                            }
-                        }
-                        Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
-                    }
-                }
-            }
-        }
-    }
-    Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Request-NsxtEdgeUserExpiry
-
-Function Request-NsxtManagerUserExpiry {
-    <#
-        .SYNOPSIS
-        Checks the expiry for local OS users in an NSX Manager appliance.
-
-        .DESCRIPTION
-        The Request-NsxtManagerUserExpiry cmdlet checks the expiry for additional local OS users in the NSX Manager
-        cluster appliance. The cmdlet connects to SDDC Manager using the -server, -user, and password values:
-        - Validates that network connectivity is available to the SDDC Manager instance
-        - Validates that network connectivity is available to the vCenter Server instance
-        - Performs checks on the local OS users for NSX Manager appliances and outputs the results
-
-        .EXAMPLE
-        Request-NsxtManagerUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -domain sfo-w01
-        This example checks the expiry for local OS users for the NSX Manager appliances for a specific workload domain.
-
-        .EXAMPLE
-        Request-NsxtManagerUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -domain sfo-w01 -failureOnly
-        This example checks the expiry for local OS users for the NSX Manager appliances for a specific workload domain but only reports issues.
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$domain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                if (($vcfVcenterDetails = Get-vCenterServerDetail -server $server -user $user -pass $pass -domainType MANAGEMENT)) {
-                    if (Test-VsphereConnection -server $($vcfVcenterDetails.fqdn)) {
-                        if (Test-VsphereAuthentication -server $vcfVcenterDetails.fqdn -user $vcfVcenterDetails.ssoAdmin -pass $vcfVcenterDetails.ssoAdminPass) {
-                            if (Get-VCFWorkloadDomain | Where-Object { $_.name -eq $domain }) {
-                                if (($vcfNsxDetails = Get-NsxtServerDetail -fqdn $server -username $user -password $pass -domain $domain -listNodes)) {
-                                    $customObject = New-Object System.Collections.ArrayList
-                                    $nsxtManagerNode = ($vcfNsxDetails.nodes | Select-Object -First 1)
-                                    $rootPass = (Get-VCFCredential | Where-Object { $_.credentialType -eq 'SSH' -and $_.resource.resourceName -eq $vcfNsxDetails.fqdn -and $_.resource.domainName -eq $domain }).password
-                                    $elementObject = Request-LocalUserExpiry -fqdn $nsxtManagerNode.fqdn -component 'NSX Manager' -rootPass $rootPass -checkUser admin
-                                    if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                        if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                            $customObject += $elementObject
-                                        }
-                                    } else {
-                                        $customObject += $elementObject
-                                    }
-                                    $elementObject = Request-LocalUserExpiry -fqdn $nsxtManagerNode.fqdn -component 'NSX Manager' -rootPass $rootPass -checkUser audit
-                                    if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                        if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                            $customObject += $elementObject
-                                        }
-                                    } else {
-                                        $customObject += $elementObject
-                                    }
-                                    $elementObject = Request-LocalUserExpiry -fqdn $nsxtManagerNode.fqdn -component 'NSX Manager' -rootPass $rootPass -checkUser root
-                                    if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                        if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                            $customObject += $elementObject
-                                        }
-                                    } else {
-                                        $customObject += $elementObject
-                                    }
-                                    $customObject | Sort-Object Component, Resource # Output Results
-                                }
-                            }
-                        }
-                        Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
-                    }
-                }
-            }
-        }
-    }
-    Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Request-NsxtManagerUserExpiry
-
-Function Request-vCenterUserExpiry {
-    <#
-		.SYNOPSIS
-        Checks the local OS user expiry in a vCenter Server instance.
-
-        .DESCRIPTION
-        The Request-vCenterUserExpiry cmdlets checks the expiry date of local accounts on vCenter Server. The cmdlet
-        connects to SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity is available to the SDDC Manager instance
-        - Validates that network connectivity is available to the vCenter Server instance
-        - Gathers the details for each vCenter Server
-        - Collects information for the local OS 'root' account
-        - Checks when the password will expire and outputs the results
-
-        .EXAMPLE
-        Request-vCenterUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will check the expiry date of the local OS 'root' account for all vCenter Server instances managed by SDDC Manager.
-
-        .EXAMPLE
-        Request-vCenterUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will check the expiry date of the local OS 'root' account for a single workload domain
-
-        .EXAMPLE
-        Request-vCenterUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains -failureOnly
-        This example will check the expiry date of the local OS 'root' account for all vCenter Server instances but only reports issues.
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                if (($vcfVcenterDetails = Get-vCenterServerDetail -server $server -user $user -pass $pass -domainType MANAGEMENT)) {
-                    if (Test-VsphereConnection -server $($vcfVcenterDetails.fqdn)) {
-                        if (Test-VsphereAuthentication -server $vcfVcenterDetails.fqdn -user $vcfVcenterDetails.ssoAdmin -pass $vcfVcenterDetails.ssoAdminPass) {
-                            $customObject = New-Object System.Collections.ArrayList
-                            if ($PsBoundParameters.ContainsKey("allDomains")) {
-                                $allVcenters = Get-VCFvCenter
-                                foreach ($vcenter in $allVcenters) {
-                                    $rootPass = (Get-VCFCredential | Where-Object {$_.credentialType -eq "SSH" -and $_.resource.resourceName -eq $vcenter.fqdn}).password
-                                    $elementObject = Request-LocalUserExpiry -fqdn $vcenter.fqdn -component vCenter -rootPass $rootPass -checkUser root
-                                    if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                        if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                            $customObject += $elementObject
-                                        }
-                                    } else {
-                                        $customObject += $elementObject
-                                    }
-                                }
-                            } else {
-                                $vcenter = (Get-VCFWorkloadDomain | Where-Object {$_.name -eq $workloadDomain}).vcenters.fqdn
-                                $rootPass = (Get-VCFCredential | Where-Object {$_.credentialType -eq "SSH" -and $_.resource.resourceName -eq $vcenter}).password
-                                $elementObject = Request-LocalUserExpiry -fqdn $vcenter -component vCenter -rootPass $rootPass -checkUser root
-                                if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                    if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                        $customObject += $elementObject
-                                    }
-                                } else {
-                                    $customObject += $elementObject
-                                }
-                            }
-                            $customObject | Sort-Object Component, Resource # Output Results
-                        }
-                        Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
-                    }
-                }
-            }
-        }
-    }
-    Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Request-vCenterUserExpiry
-
-Function Request-vRslcmUserExpiry {
-    <#
-		.SYNOPSIS
-        Checks the local OS user expiry in the vRealize Suite Lifecycle Manager instance.
-
-        .DESCRIPTION
-        The Request-vRslcmUserExpiry cmdlets checks the expiry date of local OS user accounts on vRealize Suite
-        Lifecycle Manager. The cmdlet connects to SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity is available to the SDDC Manager instance
-        - Validates that network connectivity is available to the vCenter Server instance
-        - Gathers the details for vRealize Suite Lifecycle Manager
-        - Collects information for the local OS 'root' account
-        - Checks when the password will expire and outputs the results
-
-        .EXAMPLE
-        Request-vRslcmUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1!
-        This example will check the expiry date of the local OS 'root' account on the vRealize Suite Lifecycle Manager instance deployed by SDDC Manager.
-
-        .EXAMPLE
-        Request-vRslcmUserExpiry -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -failureOnly
-        This example will check the expiry date of the local OS 'root' account on the vRealize Suite Lifecycle Manager instance but only reports issues.
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
-    )
-
-    if (Test-VCFConnection -server $server) {
-        if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-            if (($vcfVcenterDetails = Get-vCenterServerDetail -server $server -user $user -pass $pass -domainType MANAGEMENT)) {
-                if (Test-VsphereConnection -server $($vcfVcenterDetails.fqdn)) {
-                    if (Test-VsphereAuthentication -server $vcfVcenterDetails.fqdn -user $vcfVcenterDetails.ssoAdmin -pass $vcfVcenterDetails.ssoAdminPass) {
-                        if (Get-VCFvRSLCM) {
-                            $customObject = New-Object System.Collections.ArrayList
-                            $vrslcm = Get-VCFvRSLCM
-                            $rootPass = (Get-VCFCredential | Where-Object {$_.credentialType -eq "SSH" -and $_.resource.resourceName -eq $vrslcm.fqdn}).password
-                            $elementObject = Request-LocalUserExpiry -fqdn $vrslcm.fqdn -component vRSLCM -rootPass $rootPass -checkUser root
-                            if ($PsBoundParameters.ContainsKey('failureOnly')) {
-                                if (($elementObject.alert -eq 'RED') -or ($elementObject.alert -eq 'YELLOW')) {
-                                    $customObject += $elementObject
-                                }
-                            } else {
-                                $customObject += $elementObject
-                            }
-                            $customObject | Sort-Object Component, Resource
-                        }
-                    }
-                    Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
-                }
-            }
-        }
-    }
-}
-Export-ModuleMember -Function Request-vRslcmUserExpiry
 
 Function Request-NsxtVidmStatus {
     <#
@@ -3256,7 +3102,7 @@ Function Request-NsxtVidmStatus {
 
         .DESCRIPTION
         The Request-NsxtVidmStatus cmdlet returns the status of the Identity Manager integration for an NSX Manager cluster.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates network connectivity and authentication to the SDDC Manager instanc
         - Gathers the details for the NSX Manager cluster from the SDDC Manager
         - Validates network connectivity and authentication to the NSX Local Manager cluster
@@ -3345,8 +3191,8 @@ Function Request-NsxtComputeManagerStatus {
 
         .DESCRIPTION
         The Request-NsxtComputeManagerStatus cmdlet returns the status of the compute managers attached to an NSX Manager cluster.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates network connectivity and authentication to the SDDC Manager instanc
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
+        - Validates network connectivity and authentication to the SDDC Manager instance
         - Gathers the details for the NSX Manager cluster from the SDDC Manager
         - Validates network connectivity and authentication to the NSX Local Manager cluster
         - Collects the status of the compute managers
@@ -3772,7 +3618,7 @@ Function Request-SddcManagerBackupStatus {
 
         .DESCRIPTION
         The Request-SddcManagerBackupStatus cmdlet returns the status of the latest file-level backup task in an SDDC
-        Manager instance. The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        Manager instance. The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates network connectivity and authentication to the SDDC Manager instance
         - Collects the latest file-level backup status details
 
@@ -3882,7 +3728,7 @@ Function Request-NsxtManagerBackupStatus {
 
         .DESCRIPTION
         The Request-NsxtManagerBackupStatus cmdlet returns the status of the latest backup of an NSX Manager cluster.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates network connectivity and authentication to the SDDC Manager instance
         - Gathers the details for the NSX Manager cluster from the SDDC Manager
         - Validates network connectivity and authentication to the NSX Manager cluster
@@ -4109,7 +3955,7 @@ Function Request-VcenterBackupStatus {
 
         .DESCRIPTION
         The Request-VcenterBackupStatus cmdlet returns the status of the latest backup of a vCenter Server instance.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates network connectivity and authentication to the SDDC Manager instance
         - Gathers the details for the NvCenter Server instance from the SDDC Manager
         - Validates network connectivity and authentication to the vCenter Server instance
@@ -4194,7 +4040,7 @@ Function Request-VcenterBackupStatus {
 
                         if ($backupServer -eq (Get-VCFManager).fqdn -or $backupServer -eq (Get-VCFManager).ipAddress) { # Compare against the `host` attribute
                             $alert = 'RED' # Critical; backup server is located on the SDDC Manager
-                            $messageBackupServer = "Backup is located on the SDDC Manager ($server). Reconfigure backups to use another location." # Set the alert message
+                            $messageBackupServer = "Backup is located on the SDDC Manager. Reconfigure backups to use another location." # Set the alert message
                             $message = $messageBackupServer # Override the message
                         }
                     } else {
@@ -4236,7 +4082,7 @@ Function Request-DatastoreStorageCapacity {
 
         .DESCRIPTION
         The Request-DatastoreStorageCapacity cmdlet checks the datastore usage in all vCenters. The cmdlet
-        connects to SDDC Manager using the -server, -user, and -password values:
+        connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the details for each vCenter Server
@@ -4328,7 +4174,7 @@ Function Request-VcenterStorageHealth {
 
         .DESCRIPTION
         The Request-VcenterStorageHealth cmdlets checks the disk space usage on a vCenter Server. The cmdlet
-        connects to SDDC Manager using the -server, -user, and -password values:
+        connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates network connectivity and authentication to the SDDC Manager instance
         - Validates network connectivity and authentication to the vCenter Server instance
         - Collects information for the disk usage
@@ -4387,15 +4233,15 @@ Function Request-SddcManagerStorageHealth {
 
         .DESCRIPTION
         The Request-SddcManagerStorageHealth cmdlet checks the disk free space on the SDDC Manager appliance.
-        The cmdlet connects to SDDC Manager using the -server, -user, and password values:
+        The cmdlet connects to SDDC Manager using the -server, -user, -pass, -localUser, and -localPass values:
         - Performs checks on the local storage used space and outputs the results
 
         .EXAMPLE
-        Request-SddcManagerStorageHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -rootPass VMw@re1!
+        Request-SddcManagerStorageHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -localUser vcf -localPass VMw@re1!
         This example checks the hard disk space in the SDDC Manager appliance.
 
         .EXAMPLE
-        Request-SddcManagerStorageHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -rootPass VMw@re1! -failureOnly
+        Request-SddcManagerStorageHealth -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -localUser vcf -localPass VMw@re1! -failureOnly
         This example checks the hard disk space in the SDDC Manager appliance and outputs only the failures.
     #>
 
@@ -4403,13 +4249,14 @@ Function Request-SddcManagerStorageHealth {
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$rootPass,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$localUser,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$localPass,
         [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly
     )
 
     Try {
         $command = 'df -h | grep -e "^/" | grep -v "/dev/loop"' # Define Command for Retriveing Disk Information
-        $dfOutput = Invoke-SddcCommand -server $server -user $user -pass $pass -vmUser root -vmPass $rootPass -command $command # Get Disk Information from SDDC Manager
+        $dfOutput = Invoke-SddcCommand -server $server -user $user -pass $pass -vmUser $localUser -vmPass $localPass -command $command # Get Disk Information from SDDC Manager
 
         if ($PsBoundParameters.ContainsKey("failureOnly")) {
             Format-DfStorageHealth -dfOutput $dfOutput -systemFqdn $server -failureOnly
@@ -4430,7 +4277,7 @@ Function Request-EsxiStorageCapacity {
 
         .DESCRIPTION
         The Request-EsxiStorageCapacity cmdlets checks the disk space usage on ESXi hosts. The cmdlet connects to SDDC
-        Manager using the -server, -user, and -password values:
+        Manager using the -server, -user, and -pass values:
         - Validates network connectivity and authentication to the SDDC Manager instance
         - Collects disk usage information for each ESXi host in the Workload Domain
         - Checks disk usage against thresholds and outputs the results
@@ -4497,6 +4344,88 @@ Function Request-EsxiStorageCapacity {
     }
 }
 Export-ModuleMember -Function Request-EsxiStorageCapacity
+
+Function Publish-ComponentConnectivityHealthNonSOS {
+    <#
+		.SYNOPSIS
+        Request and publish Component Connectivity Health only for health checks which are not a part of SOS Utility NSX health.
+		Data obtained is a subset of Publish-ComponentConnectivityHealth cmdlet.
+
+        .DESCRIPTION
+        The Publish-ComponentConnectivityHealthNonSOS cmdlet checks component connectivity across the VMware Cloud Foundation
+        instance and prepares the data to be published to an HTML report. The cmdlet connects to SDDC Manager using the
+        -server, -user, and password values:
+        - Validates that network connectivity is available to the SDDC Manager instance
+        - Performs connectivityy health checks and outputs the results
+
+        .EXAMPLE
+        Publish-ComponentConnectivityHealthNonSOS -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
+        This example checks the component connectivity outside of SOS utility for all Workload Domains across the VMware Cloud Foundation instance.
+
+        .EXAMPLE
+        Publish-ComponentConnectivityHealthNonSOS -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1!  -workloadDomain sfo-w01
+        This example checks the component connectivity outside of SOS utility for a single Workload Domain in a VMware Cloud Foundation instance.
+
+        .EXAMPLE
+        Publish-ComponentConnectivityHealthNonSOS -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains -failureOnly
+        This example checks the component connectivity outside of SOS utility for all Workload Domains across the VMware Cloud Foundation instance but only reports issues.
+
+		.EXAMPLE
+        Publish-ComponentConnectivityHealthNonSOS -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains -jsonOutput F:\Reporting
+        This example checks the component connectivity outside of SOS utility for all Workload Domains across the VMware Cloud Foundation instance
+		and saves it under F:\Reporting with filename <timestamp>-componentconnectivityhealthnonsos-status.json
+    #>
+
+    Param (
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
+        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
+        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$failureOnly,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [String]$outputJson
+    )
+
+    Try {
+        $allConnectivityObject = New-Object System.Collections.ArrayList
+        if ($PsBoundParameters.ContainsKey('failureOnly')) {
+            if ($PsBoundParameters.ContainsKey("allDomains")) {
+                $vcenterConnectivity = Request-VcenterAuthentication -server $server -user $user -pass $pass -alldomains -failureOnly; $allConnectivityObject += $vcenterConnectivity
+                $NsxtConnectivity = Request-NsxtAuthentication -server $server -user $user -pass $pass -alldomains -failureOnly; $allConnectivityObject += $NsxtConnectivity
+            } else {
+                $vcenterConnectivity = Request-VcenterAuthentication -server $server -user $user -pass $pass -workloadDomain $workloadDomain -failureOnly; $allConnectivityObject += $vcenterConnectivity
+                $NsxtConnectivity = Request-NsxtAuthentication -server $server -user $user -pass $pass -workloadDomain $workloadDomain -failureOnly; $allConnectivityObject += $NsxtConnectivity
+            }
+        } else {
+            if ($PsBoundParameters.ContainsKey("allDomains")) {
+                $vcenterConnectivity = Request-VcenterAuthentication -server $server -user $user -pass $pass -alldomains; $allConnectivityObject += $vcenterConnectivity
+                $NsxtConnectivity = Request-NsxtAuthentication -server $server -user $user -pass $pass -alldomains; $allConnectivityObject += $NsxtConnectivity
+            } else {
+                $vcenterConnectivity = Request-VcenterAuthentication -server $server -user $user -pass $pass -workloadDomain $workloadDomain; $allConnectivityObject += $vcenterConnectivity
+                $NsxtConnectivity = Request-NsxtAuthentication -server $server -user $user -pass $pass -workloadDomain $workloadDomain; $allConnectivityObject += $NsxtConnectivity
+            }
+        }
+
+        if ($PsBoundParameters.ContainsKey("outputJson")) {
+            $json = Start-CreateOutputJsonDirectory -jsonFolder $outputJson -jsonFileSuffix $ComponentConnectivityHealthNonSOSJsonSuffix
+            $allConnectivityObject | ConvertTo-JSON -Depth 10 | Out-File $json -Encoding ASCII
+            Write-Output "JSON Created at $json"
+        } else {
+            if ($allConnectivityObject.Count -eq 0) { $addNoIssues = $true }
+            if ($addNoIssues) {
+                $allConnectivityObject = $allConnectivityObject | Sort-Object Component, Resource | ConvertTo-Html -Fragment -PreContent '<a id="general-connectivity"></a><h3>Connectivity Health Status</h3>' -PostContent '<p>No issues found.</p>'
+            } else {
+                $allConnectivityObject = $allConnectivityObject | Sort-Object Component, Resource | ConvertTo-Html -Fragment -PreContent '<a id="general-connectivity"></a><h3>Connectivity Health Status</h3>' -As Table
+            }
+            $allConnectivityObject = Convert-CssClass -htmldata $allConnectivityObject
+            $allConnectivityObject
+        }
+    }
+    Catch {
+        Debug-CatchWriter -object $_
+    }
+}
+Export-ModuleMember -Function Publish-ComponentConnectivityHealthNonSOS
 
 Function Publish-ComponentConnectivityHealth {
     <#
@@ -4577,7 +4506,7 @@ Function Request-VcenterAuthentication {
 
         .DESCRIPTION
         The Request-VcenterAuthentication cmdlets checks the authentication to vCenter Server instance. The cmdlet
-        connects to SDDC Manager using the -server, -user, and -password values:
+        connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
 
@@ -4672,7 +4601,7 @@ Function Request-NsxtAuthentication {
 
         .DESCRIPTION
         The Request-NsxtAuthentication cmdlets checks the authentication to NSX Manager instance. The cmdlet
-        connects to SDDC Manager using the -server, -user, and -password values:
+        connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the NSX Manager instance
 
@@ -4781,8 +4710,8 @@ Function Request-NsxtTransportNodeStatus {
 
         .DESCRIPTION
         The Request-NsxtTransportNodeStatus cmdlet returns the status NSX transport nodes managed by an NSX Manager cluster.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates network connectivity and authentication to the SDDC Manager instanc
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
+        - Validates network connectivity and authentication to the SDDC Manager instance
         - Gathers the details for the NSX Manager cluster from the SDDC Manager
         - Validates network connectivity and authentication to the NSX Local Manager cluster
         - Collects the status of the transport nodes
@@ -4867,8 +4796,8 @@ Function Request-NsxtTransportNodeTunnelStatus {
 
         .DESCRIPTION
         The Request-NsxtTransportNodeTunnelStatus cmdlet returns the status NSX transport nodes tunnels.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates network connectivity and authentication to the SDDC Manager instanc
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
+        - Validates network connectivity and authentication to the SDDC Manager instance
         - Gathers the details for the NSX Manager cluster from the SDDC Manager
         - Validates network connectivity and authentication to the NSX Local Manager cluster
         - Collects the status of the transport node tunnels
@@ -4964,7 +4893,7 @@ Function Request-NsxtTier0BgpStatus {
 
         .DESCRIPTION
         The Request-NsxtTier0BgpStatus cmdlet returns the BGP status for all Tier-0 gateways managed by the NSX Manager
-        cluster. The cmdlet connects to the NSX Local Manager using the -server, -user, and -password values:
+        cluster. The cmdlet connects to the NSX Local Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the NSX Local Manager cluster
         - Gathers the details for the NSX Local Manager cluster
@@ -5054,7 +4983,7 @@ Function Publish-VmConnectedCdrom {
 
         .DESCRIPTION
         The Publish-VmConnectedCdrom cmdlet returns the status of virtual machines with connected CD-ROMS in a workload
-        domain in HTML format. The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        domain in HTML format. The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Publishes information
@@ -5114,7 +5043,7 @@ Function Request-VmConnectedCdrom {
 
         .DESCRIPTION
         The Request-VmConnectedCdrom cmdlet returns the status of virtual machines with connected CD-ROMs in a workload
-        domain. The cmdlet connects to SDDC Manager using the -server, -user, and -password values:
+        domain. The cmdlet connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the status of virtual machines with connected CD-ROMs in a workload domain.
@@ -5177,7 +5106,7 @@ Function Publish-EsxiConnectionHealth {
 
         .DESCRIPTION
         The Publish-EsxiConnectionHealth cmdlet returns the status of virtual machines with connected CD-ROMS in a workload
-        domain in HTML format. The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        domain in HTML format. The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Publishes information
@@ -5249,7 +5178,7 @@ Function Request-EsxiConnectionHealth {
 
         .DESCRIPTION
         The Request-EsxiConnectionHealth cmdlet returns the connection status of ESXi hosts in a workload domain.
-        The cmdlet connects to SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the connection status of ESXi hosts in a workload domain.
@@ -5336,7 +5265,7 @@ Function Publish-SddcManagerFreePool {
 
         .DESCRIPTION
         The Publish-SddcManagerFreePool cmdlet returns SDDC Manager free pool information in HTML format.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates the network connectivity and authentication to the SDDC Manager instance
         - Publishes information
 
@@ -5397,7 +5326,7 @@ Function Request-SddcManagerFreePool {
 
         .DESCRIPTION
         The Request-SddcManagerFreePool cmdlet returns status of the ESXi hosts in the free pool. The cmdlet connects
-        to SDDC Manager using the -server, -user, and -password values:
+        to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity and authentication is possible to the SDDC Manager instance
         - Gathers the details for the ESXi hosts in the free pool
 
@@ -5511,7 +5440,7 @@ Function Publish-EsxiAlert {
 
         .DESCRIPTION
         The Publish-EsxiAlert cmdlet returns all alarms from ESXi hosts managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Collects the alerts from all ESXi hosts in vCenter Server instance
@@ -5585,7 +5514,7 @@ Function Publish-NsxtAlert {
 
         .DESCRIPTION
         The Publish-NsxtAlert cmdlet returns all alarms from NSX Manager cluster.
-        The cmdlet connects to the NSX Manager using the -server, -user, and -password values:
+        The cmdlet connects to the NSX Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the NSX Manager cluster
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the details for the NSX Manager cluster
@@ -5660,7 +5589,7 @@ Function Publish-VcenterAlert {
 
         .DESCRIPTION
         The Publish-VcenterAlert cmdlet returns all alarms from vCenter Server managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Collects the alerts from vCenter Server
@@ -5734,7 +5663,7 @@ Function Publish-VsanAlert {
 
         .DESCRIPTION
         The Publish-VsanAlert cmdlet returns vSAN Healthcheck alarms from vCenter Server managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Collects the vSAN Healthcheck alarms from vCenter Server
@@ -5808,7 +5737,7 @@ Function Request-NsxtAlert {
 
         .DESCRIPTION
         The Request-NsxtAlert cmdlet returns all alarms from NSX Manager cluster.
-        The cmdlet connects to the NSX-T Manager using the -server, -user, and -password values:
+        The cmdlet connects to the NSX-T Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the NSX-T Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the details for the NSX Manager cluster
@@ -5882,7 +5811,7 @@ Function Request-VsanAlert {
 
         .DESCRIPTION
         The Request-VsanAlert cmdlet returns vSAN Healthcheck alarms from vCenter Server managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Collects the vSAN Healthcheck alarms from vCenter Server
@@ -5948,7 +5877,7 @@ Function Request-VcenterAlert {
 
         .DESCRIPTION
         The Request-VcenterAlert cmdlet returns all alarms from vCenter Server managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Collects the alerts from vCenter Server
@@ -6044,7 +5973,7 @@ Function Request-EsxiAlert {
 
         .DESCRIPTION
         The Request-EsxiAlert cmdlet returns all alarms from all ESXi hosts in vCenter Server managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Collects the alerts from all ESXi hosts in vCenter Server instance
@@ -6121,7 +6050,7 @@ Function Publish-ClusterConfiguration {
 
         .DESCRIPTION
         The Publish-ClusterConfiguration cmdlet returns cluster configuration information in HTML format.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Publishes information
@@ -6175,7 +6104,7 @@ Function Publish-EsxiCoreDumpConfig {
 
         .DESCRIPTION
         The Publish-EsxiCoreDumpConfig cmdlet generates an ESXi core dump report for a workload domain. The cmdlet
-        connects to SDDC Manager using the -server, -user, and -password values:
+        connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Generates an ESXi core dump report for all ESXi hosts in a workload domain
@@ -6265,7 +6194,7 @@ Function Request-ClusterConfiguration {
 
         .DESCRIPTION
         The Request-ClusterConfiguration cmdlets gets the cluster configuration for a vCenter Server instance. The
-        cmdlet  connects to SDDC Manager using the -server, -user, and -password values:
+        cmdlet  connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the cluster details from vCenter Server
@@ -6330,7 +6259,7 @@ Function Publish-ClusterDrsRule {
 
         .DESCRIPTION
         The Publish-ClusterDrsRule cmdlet returns cluster DRS rule information in HTML format.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Publishes information
@@ -6388,7 +6317,7 @@ Function Request-ClusterDrsRule {
 
         .DESCRIPTION
         The Request-ClusterDrsRule cmdlets gets the cluster DRS rules for a vCenter Server instance. The
-        cmdlet  connects to SDDC Manager using the -server, -user, and -password values:
+        cmdlet  connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the cluster DRS rules from vCenter Server
@@ -6452,7 +6381,7 @@ Function Publish-ResourcePool {
 
         .DESCRIPTION
         The Publish-ResourcePool cmdlet returns resource pool information in HTML format.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Publishes resource pool information
@@ -6505,7 +6434,7 @@ Function Request-ResourcePool {
 
         .DESCRIPTION
         The Request-ResourcePool cmdlets gets the resource pool details for a vCenter Server instance. The cmdlet
-        connects to SDDC Manager using the -server, -user, and -password values:
+        connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the resource pool details from vCenter Server
@@ -6566,7 +6495,7 @@ Function Publish-VmOverride {
 
         .DESCRIPTION
         The Publish-VmOverride cmdlet returns VM Override information in HTML format.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Publishes information
@@ -6619,7 +6548,7 @@ Function Request-VmOverride {
 
         .DESCRIPTION
         The Request-VmOverride cmdlets gets VM Override setting for a vCenter Server instance. The cmdlet connects to
-        SDDC Manager using the -server, -user, and -password values:
+        SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the VM Override settings from vCenter Server
@@ -6675,7 +6604,7 @@ Function Publish-VirtualNetwork {
 
         .DESCRIPTION
         The Publish-VirtualNetwork cmdlet returns vSphere virtual networking information in HTML format.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Publishes information
@@ -6728,7 +6657,7 @@ Function Request-VirtualNetwork {
 
         .DESCRIPTION
         The Request-VirtualNetwork cmdlets gets vSphere virtual networking configuration for a vCenter Server instance.
-        The cmdlet connects to SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the vSphere virtual networking configuration from vCenter Server
@@ -6791,7 +6720,7 @@ Function Publish-EsxiSecurityConfiguration {
 
         .DESCRIPTION
         The Publish-EsxiSecurityConfiguration cmdlet returns ESXi security information in HTML format.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the vCenter Server instance
         - Validates the authentication to vCenter Server with credentials from SDDC Manager
         - Publishes information
@@ -6844,7 +6773,7 @@ Function Request-EsxiSecurityConfiguration {
 
         .DESCRIPTION
         The Request-EsxiSecurityConfiguration cmdlets gets ESXi security configuration for a vCenter Server instance.
-        The cmdlet connects to SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the vCenter Server instance
         - Gathers the ESXi security configuration from vCenter Server
@@ -6900,968 +6829,26 @@ Export-ModuleMember -Function Request-EsxiSecurityConfiguration
 
 
 #######################################################################################################################
-###############################  P A S S W O R D   P O L I C Y   F U N C T I O N S   ##################################
-
-Function Publish-SddcManagerPasswordExpiration {
-    <#
-        .SYNOPSIS
-        Publish password expiration policy for SDDC Manager.
-
-        .DESCRIPTION
-        The Publish-SddcManagerPasswordExpiration cmdlet returns password expiration policy for SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password expiration policy for each local user of SDDC Manager
-
-        .EXAMPLE
-        Publish-SddcManagerPasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -allDomains
-        This example will return password expiration policy for each local user of SDDC Manager
-
-        .EXAMPLE
-        Publish-SddcManagerPasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -workloadDomain sfo-w01
-        This example will NOT return the password expiration policy for each local user of SDDC Manager as the Workload Domain provided is not the Management Domain
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcRootPass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $localUsers = @("root","vcf","backup")
-                $allSddcManagerPasswordExpirationObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    if (Get-VCFWorkloadDomain | Where-Object {$_.name -eq $workloadDomain -and $_.type -eq "MANAGEMENT"}) {
-                        $userPasswordExpiration = Request-LocalUserPasswordExpiration -server $server -user $user -pass $pass -domain (Get-VCFWorkloadDomain | Where-Object {$_.type -eq "MANAGEMENT"}).name -vmName ($server.Split("."))[-0] -guestUser root -guestPassword $sddcRootPass -localUser $localUsers; $allSddcManagerPasswordExpirationObject += $userPasswordExpiration
-                    }
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        if ($domain | Where-Object {$_.type -eq "MANAGEMENT"}) {
-                            $userPasswordExpiration = Request-LocalUserPasswordExpiration -server $server -user $user -pass $pass -domain (Get-VCFWorkloadDomain | Where-Object {$_.type -eq "MANAGEMENT"}).name -vmName ($server.Split("."))[-0] -guestUser root -guestPassword $sddcRootPass -localUser $localUsers; $allSddcManagerPasswordExpirationObject += $userPasswordExpiration
-                        }
-                    }
-                }
-
-                if ($allSddcManagerPasswordExpirationObject.Count -eq 0) { $notManagement = $true }
-                if ($notManagement) {
-                    $allSddcManagerPasswordExpirationObject = $allSddcManagerPasswordExpirationObject | ConvertTo-Html -Fragment -PreContent '<a id="sddcmanager-password-expiration"></a><h3>SDDC Manager - Password Expiration</h3>' -PostContent '<p>Management Domain not requested.</p>'
-                } else {
-                    $allSddcManagerPasswordExpirationObject = $allSddcManagerPasswordExpirationObject | Sort-Object 'Workload Domain', 'Virtual Machine', 'Local User' | ConvertTo-Html -Fragment -PreContent '<a id="sddcmanager-password-expiration"></a><h3>SDDC Manager - Password Expiration</h3>' -As Table
-                }
-                $allSddcManagerPasswordExpirationObject = Convert-CssClass -htmldata $allSddcManagerPasswordExpirationObject
-                $allSddcManagerPasswordExpirationObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-SddcManagerPasswordExpiration
-
-Function Publish-SddcManagerPasswordComplexity {
-    <#
-        .SYNOPSIS
-        Publish password complexity policy for SDDC Manager.
-
-        .DESCRIPTION
-        The Publish-SddcManagerPasswordComplexity cmdlet returns password complexity policy for SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password complexity policy for SDDC Manager
-
-        .EXAMPLE
-        Publish-SddcManagerPasswordComplexity -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -allDomains
-        This example will return password complexity policy for SDDC Manager
-
-        .EXAMPLE
-        Publish-SddcManagerPasswordComplexity -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -workloadDomain sfo-w01
-        This example will NOT return the password complexity policy for SDDC Manager as the Workload Domain provided is not the Management Domain
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcRootPass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $sddcManagerPasswordComplexityObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    if (Get-VCFWorkloadDomain | Where-Object {$_.name -eq $workloadDomain -and $_.type -eq "MANAGEMENT"}) {
-                        $sddcManagerPasswordComplexity = Request-SddcManagerPasswordComplexity -server $server -user $user -pass $pass -rootPass $sddcRootPass; $sddcManagerPasswordComplexityObject += $sddcManagerPasswordComplexity
-                    }
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        if ($domain | Where-Object {$_.type -eq "MANAGEMENT"}) {
-                            $sddcManagerPasswordComplexity = Request-SddcManagerPasswordComplexity -server $server -user $user -pass $pass -rootPass $sddcRootPass; $sddcManagerPasswordComplexityObject += $sddcManagerPasswordComplexity
-                        }
-                    }
-                }
-
-                if ($sddcManagerPasswordComplexityObject.Count -eq 0) { $notManagement = $true }
-                if ($notManagement) {
-                    $sddcManagerPasswordComplexityObject = $sddcManagerPasswordComplexityObject | ConvertTo-Html -Fragment -PreContent '<a id="sddcmanager-password-complexity"></a><h3>SDDC Manager - Password Complexity</h3>' -PostContent '<p>Management Domain not requested.</p>'
-                } else {
-                    $sddcManagerPasswordComplexityObject = $sddcManagerPasswordComplexityObject | Sort-Object 'Virtual Machine' | ConvertTo-Html -Fragment -PreContent '<a id="sddcmanager-password-complexity"></a><h3>SDDC Manager - Password Complexity</h3>' -As Table
-                }
-                $sddcManagerPasswordComplexityObject = Convert-CssClass -htmldata $sddcManagerPasswordComplexityObject
-                $sddcManagerPasswordComplexityObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-SddcManagerPasswordComplexity
-
-Function Publish-SddcManagerAccountLockout {
-    <#
-        .SYNOPSIS
-        Publish password complexity policy for SDDC Manager.
-
-        .DESCRIPTION
-        The Publish-SddcManagerAccountLockout cmdlet returns account lockout policy for SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects account lockout policy forSDDC Manager
-
-        .EXAMPLE
-        Publish-SddcManagerAccountLockout -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -allDomains
-        This example will return account lockout policy for SDDC Manager
-
-        .EXAMPLE
-        Publish-SddcManagerAccountLockout -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -sddcRootPass VMw@re1! -workloadDomain sfo-w01
-        This example will NOT return the account lockout policy for SDDC Manager as the Workload Domain provided is not the Management Domain
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcRootPass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $sddcManagerAccountLockoutObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    if (Get-VCFWorkloadDomain | Where-Object {$_.name -eq $workloadDomain -and $_.type -eq "MANAGEMENT"}) {
-                        $sddcManagerAccountlockout = Request-SddcManagerAccountLockout -server $server -user $user -pass $pass -rootPass $sddcRootPass; $sddcManagerAccountLockoutObject += $sddcManagerAccountlockout
-                    }
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        if ($domain | Where-Object {$_.type -eq "MANAGEMENT"}) {
-                            $sddcManagerAccountlockout = Request-SddcManagerAccountLockout -server $server -user $user -pass $pass -rootPass $sddcRootPass; $sddcManagerAccountLockoutObject += $sddcManagerAccountlockout
-                        }
-                    }
-                }
-
-                if ($sddcManagerAccountLockoutObject.Count -eq 0) { $notManagement = $true }
-                if ($notManagement) {
-                    $sddcManagerAccountLockoutObject = $sddcManagerAccountLockoutObject | ConvertTo-Html -Fragment -PreContent '<a id="sddcmanager-account-lockout"></a><h3>SDDC Manager - Account Lockout</h3>' -PostContent '<p>Management Domain not requested.</p>'
-                } else {
-                    $sddcManagerAccountLockoutObject = $sddcManagerAccountLockoutObject | Sort-Object 'Virtual Machine' | ConvertTo-Html -Fragment -PreContent '<a id="sddcmanager-account-lockout"></a><h3>SDDC Manager - Account Lockout</h3>' -As Table
-                }
-                $sddcManagerAccountLockoutObject = Convert-CssClass -htmldata $sddcManagerAccountLockoutObject
-                $sddcManagerAccountLockoutObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-SddcManagerAccountLockout
-
-Function Publish-SsoPasswordExpiration {
-    <#
-        .SYNOPSIS
-        Publish password expiration policy for vCenter Single Sign-On.
-
-        .DESCRIPTION
-        The Publish-SsoPasswordExpiration cmdlet returns password expiration policy for vCenter Single Sign-On.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password expiration policy for vCenter Single Sign-On
-
-        .EXAMPLE
-        Publish-SsoPasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return password expiration policy for vCenter Single Sign-On
-
-        .EXAMPLE
-        Publish-SsoPasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will NOT return the password expiration policy vCenter Single Sign-On
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $ssoPasswordExpirationObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    if (Get-VCFWorkloadDomain | Where-Object {$_.name -eq $workloadDomain -and $_.type -eq "MANAGEMENT"}) {
-                        $ssoPasswordExpiration = Request-SsoPasswordExpiration -server $server -user $user -pass $pass -domain $workloadDomain; $ssoPasswordExpirationObject += $ssoPasswordExpiration
-                    }
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        if ($domain | Where-Object {$_.type -eq "MANAGEMENT"}) {
-                            $ssoPasswordExpiration = Request-SsoPasswordExpiration -server $server -user $user -pass $pass -domain $domain.name; $ssoPasswordExpirationObject += $ssoPasswordExpiration
-                        }
-                    }
-                }
-
-                if ($ssoPasswordExpirationObject.Count -eq 0) { $notManagement = $true }
-                if ($notManagement) {
-                    $ssoPasswordExpirationObject = $ssoPasswordExpirationObject | ConvertTo-Html -Fragment -PreContent '<a id="sso-password-expiration"></a><h3>vCenter Single Sign-On - Password Expiration</h3>' -PostContent '<p>Management Domain not requested.</p>'
-                } else {
-                    $ssoPasswordExpirationObject = $ssoPasswordExpirationObject | Sort-Object 'Workload Domain' | ConvertTo-Html -Fragment -PreContent '<a id="sso-password-expiration"></a><h3>vCenter Single Sign-On - Password Expiration</h3>' -As Table
-                }
-                $ssoPasswordExpirationObject = Convert-CssClass -htmldata $ssoPasswordExpirationObject
-                $ssoPasswordExpirationObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-SsoPasswordExpiration
-
-Function Publish-SsoPasswordComplexity {
-    <#
-        .SYNOPSIS
-        Publish password complexity policy for vCenter Single Sign-On.
-
-        .DESCRIPTION
-        The Publish-SsoPasswordComplexity cmdlet returns password complexity policy for vCenter Single Sign-On.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password complexity policy for vCenter Single Sign-On
-
-        .EXAMPLE
-        Publish-SsoPasswordComplexity -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return password complexity policy for vCenter Single Sign-On
-
-        .EXAMPLE
-        Publish-SsoPasswordComplexity -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will NOT return the password complexity policy vCenter Single Sign-On
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $ssoPasswordComplexityObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    if (Get-VCFWorkloadDomain | Where-Object {$_.name -eq $workloadDomain -and $_.type -eq "MANAGEMENT"}) {
-                        $ssoPasswordComplexity = Request-SsoPasswordComplexity -server $server -user $user -pass $pass -domain $workloadDomain; $ssoPasswordComplexityObject += $ssoPasswordComplexity
-                    }
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        if ($domain | Where-Object {$_.type -eq "MANAGEMENT"}) {
-                            $ssoPasswordComplexity = Request-SsoPasswordComplexity -server $server -user $user -pass $pass -domain $domain.name; $ssoPasswordComplexityObject += $ssoPasswordComplexity
-                        }
-                    }
-                }
-
-                if ($ssoPasswordComplexityObject.Count -eq 0) { $notManagement = $true }
-                if ($notManagement) {
-                    $ssoPasswordComplexityObject = $ssoPasswordComplexityObject | ConvertTo-Html -Fragment -PreContent '<a id="sso-password-complexity"></a><h3>vCenter Single Sign-On - Password Complexity</h3>' -PostContent '<p>Management Domain not requested.</p>'
-                } else {
-                    $ssoPasswordComplexityObject = $ssoPasswordComplexityObject | Sort-Object 'Workload Domain' | ConvertTo-Html -Fragment -PreContent '<a id="sso-password-complexity"></a><h3>vCenter Single Sign-On - Password Complexity</h3>' -As Table
-                }
-                $ssoPasswordComplexityObject = Convert-CssClass -htmldata $ssoPasswordComplexityObject
-                $ssoPasswordComplexityObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-SsoPasswordComplexity
-
-Function Publish-SsoAccountLockout {
-    <#
-        .SYNOPSIS
-        Publish account lockout policy for vCenter Single Sign-On.
-
-        .DESCRIPTION
-        The Publish-SsoAccountLockout cmdlet returns account lockout policy for vCenter Single Sign-On.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects account lockout policy for vCenter Single Sign-On
-
-        .EXAMPLE
-        Publish-SsoAccountLockout -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return account lockout policy for vCenter Single Sign-On
-
-        .EXAMPLE
-        Publish-SsoAccountLockout -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will NOT return the account lockout policy vCenter Single Sign-On
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $ssoAccountLockoutObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    if (Get-VCFWorkloadDomain | Where-Object {$_.name -eq $workloadDomain -and $_.type -eq "MANAGEMENT"}) {
-                        $ssoAccountLockout = Request-SsoPasswordComplexity -server $server -user $user -pass $pass -domain $workloadDomain; $ssoAccountLockoutObject += $ssoAccountLockout
-                    }
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        if ($domain | Where-Object {$_.type -eq "MANAGEMENT"}) {
-                            $ssoAccountLockout = Request-SsoPasswordComplexity -server $server -user $user -pass $pass -domain $domain.name; $ssoAccountLockoutObject += $ssoAccountLockout
-                        }
-                    }
-                }
-
-                if ($ssoAccountLockoutObject.Count -eq 0) { $notManagement = $true }
-                if ($notManagement) {
-                    $ssoAccountLockoutObject = $ssoAccountLockoutObject | ConvertTo-Html -Fragment -PreContent '<a id="sso-account-lockout"></a><h3>vCenter Single Sign-On - Account Lockout</h3>' -PostContent '<p>Management Domain not requested.</p>'
-                } else {
-                    $ssoAccountLockoutObject = $ssoAccountLockoutObject | Sort-Object 'Workload Domain' | ConvertTo-Html -Fragment -PreContent '<a id="sso-account-lockout"></a><h3>vCenter Single Sign-On - Account Lockout</h3>' -As Table
-                }
-                $ssoAccountLockoutObject = Convert-CssClass -htmldata $ssoAccountLockoutObject
-                $ssoAccountLockoutObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-SsoAccountLockout
-
-Function Publish-VcenterPasswordExpiration {
-    <#
-        .SYNOPSIS
-        Publish password expiration policy for vCenter Server.
-
-        .DESCRIPTION
-        The Publish-VcenterPasswordExpiration cmdlet returns password expiration policy for SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password expiration policy for vCenter Server
-
-        .EXAMPLE
-        Publish-VcenterPasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return password expiration policy for each vCenter Server
-
-        .EXAMPLE
-        Publish-VcenterPasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will return password expiration policy for a vCenter Server
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $vcenterPasswordExpirationObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    $vcenterPasswordExpiration = Request-VcenterPasswordExpiration -server $server -user $user -pass $pass -domain $workloadDomain; $vcenterPasswordExpirationObject += $vcenterPasswordExpiration
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        $vcenterPasswordExpiration = Request-VcenterPasswordExpiration -server $server -user $user -pass $pass -domain $domain.name; $vcenterPasswordExpirationObject += $vcenterPasswordExpiration
-                    }
-                }
-
-                $vcenterPasswordExpirationObject = $vcenterPasswordExpirationObject | Sort-Object 'Workload Domain', 'Virtual Machine', 'Local User' | ConvertTo-Html -Fragment -PreContent '<a id="vcenter-password-expiration"></a><h3>vCenter Server - Password Expiration</h3>' -As Table
-                $vcenterPasswordExpirationObject = Convert-CssClass -htmldata $vcenterPasswordExpirationObject
-                $vcenterPasswordExpirationObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-VcenterPasswordExpiration
-
-Function Publish-VcenterLocalPasswordExpiration {
-    <#
-        .SYNOPSIS
-        Publish password expiration policy for each local user of vCenter Server.
-
-        .DESCRIPTION
-        The Publish-VcenterLocalPasswordExpiration cmdlet returns password expiration policy for SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password expiration policy for each local user of vCenter Server
-
-        .EXAMPLE
-        Publish-VcenterLocalPasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return password expiration policy for each local user of vCenter Server for all Workload Domains
-
-        .EXAMPLE
-        Publish-VcenterLocalPasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will return password expiration policy for each local user of vCenter Server
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $vcenterLocalPasswordExpirationObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    $vcenterLocalPasswordExpiration = Request-VcenterRootPasswordExpiration -server $server -user $user -pass $pass -domain $workloadDomain; $vcenterLocalPasswordExpirationObject += $vcenterLocalPasswordExpiration
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        $vcenterLocalPasswordExpiration = Request-VcenterRootPasswordExpiration -server $server -user $user -pass $pass -domain $domain.name; $vcenterLocalPasswordExpirationObject += $vcenterLocalPasswordExpiration
-                    }
-                }
-
-                $vcenterLocalPasswordExpirationObject = $vcenterLocalPasswordExpirationObject | Sort-Object 'Workload Domain', 'Virtual Machine', 'Local User' | ConvertTo-Html -Fragment -PreContent '<a id="vcenter-password-expiration-local"></a><h3>vCenter Server - Password Expiration (Local Users)</h3>' -As Table
-                $vcenterLocalPasswordExpirationObject = Convert-CssClass -htmldata $vcenterLocalPasswordExpirationObject
-                $vcenterLocalPasswordExpirationObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-VcenterLocalPasswordExpiration
-
-Function Publish-VcenterLocalPasswordComplexity {
-    <#
-        .SYNOPSIS
-        Publish password complexity policy for each vCenter Server.
-
-        .DESCRIPTION
-        The Publish-VcenterLocalPasswordComplexity cmdlet returns password complexity policy for SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password complexity policy for each vCenter Server
-
-        .EXAMPLE
-        Publish-VcenterLocalPasswordComplexity -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return password complexity policy for each vCenter Server for all Workload Domains
-
-        .EXAMPLE
-        Publish-VcenterLocalPasswordComplexity -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will return password complexity policy for a vCenter Server
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $vcenterLocalPasswordComplexitynObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    $vcenterLocalPasswordComplexity = Request-VcenterPasswordComplexity -server $server -user $user -pass $pass -domain $workloadDomain; $vcenterLocalPasswordComplexitynObject += $vcenterLocalPasswordComplexity
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        $vcenterLocalPasswordComplexity = Request-VcenterPasswordComplexity -server $server -user $user -pass $pass -domain $domain.name; $vcenterLocalPasswordComplexitynObject += $vcenterLocalPasswordComplexity
-                    }
-                }
-
-                $vcenterLocalPasswordComplexitynObject = $vcenterLocalPasswordComplexitynObject | Sort-Object 'Workload Domain', 'Virtual Machine' | ConvertTo-Html -Fragment -PreContent '<a id="vcenter-password-complexity-local"></a><h3>vCenter Server - Password Complexity (Local Users)</h3>' -As Table
-                $vcenterLocalPasswordComplexitynObject = Convert-CssClass -htmldata $vcenterLocalPasswordComplexitynObject
-                $vcenterLocalPasswordComplexitynObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-VcenterLocalPasswordComplexity
-
-Function Publish-VcenterLocalAccountLockout {
-    <#
-        .SYNOPSIS
-        Publish account lockout policy for each vCenter Server.
-
-        .DESCRIPTION
-        The Publish-VcenterLocalAccountLockout cmdlet returns account lockout policy for SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password account lockout for each vCenter Server
-
-        .EXAMPLE
-        Publish-VcenterLocalAccountLockout -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return password account lockout for each vCenter Server for all Workload Domains
-
-        .EXAMPLE
-        Publish-VcenterLocalAccountLockout -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will return password account lockout for a vCenter Server
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $vcenterLocalAccountLockoutObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    $vcenterLocalAccountLockout = Request-VcenterAccountLockout -server $server -user $user -pass $pass -domain $workloadDomain; $vcenterLocalAccountLockoutObject += $vcenterLocalAccountLockout
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        $vcenterLocalAccountLockout = Request-VcenterAccountLockout -server $server -user $user -pass $pass -domain $domain.name; $vcenterLocalAccountLockoutObject += $vcenterLocalAccountLockout
-                    }
-                }
-
-                $vcenterLocalAccountLockoutObject = $vcenterLocalAccountLockoutObject | Sort-Object 'Workload Domain', 'Virtual Machine' | ConvertTo-Html -Fragment -PreContent '<a id="vcenter-account-lockout-local"></a><h3>vCenter Server - Account Lockout (Local Users)</h3>' -As Table
-                $vcenterLocalAccountLockoutObject = Convert-CssClass -htmldata $vcenterLocalAccountLockoutObject
-                $vcenterLocalAccountLockoutObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-VcenterLocalAccountLockout
-
-Function Publish-NsxManagerPasswordExpiration {
-    <#
-        .SYNOPSIS
-        Publish password expiration policy for NSX Local Manager.
-
-        .DESCRIPTION
-        The Publish-NsxManagerPasswordExpiration cmdlet returns password expiration policy for local users of NSX Local
-        Manager. The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password expiration policy for each local user of NSX Local Manager
-
-        .EXAMPLE
-        Publish-NsxManagerPasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return password expiration policy for each local user of NSX Local Manager for all Workload Domains
-
-        .EXAMPLE
-        Publish-NsxManagerPasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will return password expiration policy for each local user of NSX Local Manager for a Workload Domain
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $localUsers = @("root","admin","audit","guestuser1","guestuser2")
-                $nsxManagerPasswordExpirationObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    if (($vcfNsxDetails = Get-NsxtServerDetail -fqdn $server -username $user -password $pass -domain $workloadDomain -listNodes)) {
-                        foreach ($nsxtManagerNode in $vcfNsxDetails.nodes) {
-                            $nsxPasswordExpiration = Request-LocalUserPasswordExpiration -server $server -user $user -pass $pass -domain $workloadDomain -vmName ($nsxtManagerNode.fqdn.Split("."))[-0] -guestUser $vcfNsxDetails.rootUser -guestPassword $vcfNsxDetails.rootPass -localUser $localUsers; $nsxManagerPasswordExpirationObject += $nsxPasswordExpiration
-                        }
-                    }
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        if (($vcfNsxDetails = Get-NsxtServerDetail -fqdn $server -username $user -password $pass -domain $domain.name -listNodes)) {
-                            foreach ($nsxtManagerNode in $vcfNsxDetails.nodes) {
-                                $nsxPasswordExpiration = Request-LocalUserPasswordExpiration -server $server -user $user -pass $pass -domain $domain.name -vmName ($nsxtManagerNode.fqdn.Split("."))[-0] -guestUser $vcfNsxDetails.rootUser -guestPassword $vcfNsxDetails.rootPass -localUser $localUsers; $nsxManagerPasswordExpirationObject += $nsxPasswordExpiration
-                            }
-                        }
-                    }
-                }
-                
-                $nsxManagerPasswordExpirationObject = $nsxManagerPasswordExpirationObject | Sort-Object 'Workload Domain', 'Virtual Machine', 'Local User' | ConvertTo-Html -Fragment -PreContent '<a id="nsxmanager-password-expiration"></a><h3>NSX Manager - Password Expiration</h3>' -As Table
-                $nsxManagerPasswordExpirationObject = Convert-CssClass -htmldata $nsxManagerPasswordExpirationObject
-                $nsxManagerPasswordExpirationObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-NsxManagerPasswordExpiration
-
-Function Publish-NsxManagerPasswordComplexity {
-    <#
-        .SYNOPSIS
-        Publish password complexity policy for NSX Local Manager.
-
-        .DESCRIPTION
-        The Publish-NsxManagerPasswordComplexity cmdlet returns password complexity policy for local users of NSX Local
-        Manager. The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password complexity policy for each local user of NSX Local Manager
-
-        .EXAMPLE
-        Publish-NsxManagerPasswordComplexity -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return password complexity policy for each local user of NSX Local Manager for all Workload Domains
-
-        .EXAMPLE
-        Publish-NsxManagerPasswordComplexity -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will return password complexity policy for each local user of NSX Local Manager for a Workload Domain
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $nsxManagerPasswordComplexityObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    $nsxPasswordComplexity = Request-NsxtManagerPasswordComplexity -server $server -user $user -pass $pass -domain $workloadDomain; $nsxManagerPasswordComplexityObject += $nsxPasswordComplexity
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        $nsxPasswordComplexity = Request-NsxtManagerPasswordComplexity -server $server -user $user -pass $pass -domain $domain.name; $nsxManagerPasswordComplexityObject += $nsxPasswordComplexity
-                    }
-                }
-                
-                $nsxManagerPasswordComplexityObject = $nsxManagerPasswordComplexityObject | Sort-Object 'Workload Domain', 'Virtual Machine' | ConvertTo-Html -Fragment -PreContent '<a id="nsxmanager-password-complexity"></a><h3>NSX Manager - Password Complexity</h3>' -As Table
-                $nsxManagerPasswordComplexityObject = Convert-CssClass -htmldata $nsxManagerPasswordComplexityObject
-                $nsxManagerPasswordComplexityObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-NsxManagerPasswordComplexity
-
-Function Publish-NsxManagerAccountLockout {
-    <#
-        .SYNOPSIS
-        Publish account lockout policy for NSX Local Manager.
-
-        .DESCRIPTION
-        The Publish-NsxManagerAccountLockout cmdlet returns account lockout policy for local users of NSX Local
-        Manager. The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects account lockout policy for each local user of NSX Local Manager
-
-        .EXAMPLE
-        Publish-NsxManagerAccountLockout -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return account lockout policy for each local user of NSX Local Manager for all Workload Domains
-
-        .EXAMPLE
-        Publish-NsxManagerAccountLockout -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will return account lockout policy for each local user of NSX Local Manager for a Workload Domain
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $nsxManagerAccountLockoutObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    $nsxAccountLockout = Request-NsxtManagerAccountLockout -server $server -user $user -pass $pass -domain $workloadDomain; $nsxManagerAccountLockoutObject += $nsxAccountLockout
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        $nsxAccountLockout = Request-NsxtManagerAccountLockout -server $server -user $user -pass $pass -domain $domain.name; $nsxManagerAccountLockoutObject += $nsxAccountLockout
-                    }
-                }
-                
-                $nsxManagerAccountLockoutObject = $nsxManagerAccountLockoutObject | Sort-Object 'Workload Domain', 'Virtual Machine' | ConvertTo-Html -Fragment -PreContent '<a id="nsxmanager-account-lockout"></a><h3>NSX Manager - Account Lockout</h3>' -As Table
-                $nsxManagerAccountLockoutObject = Convert-CssClass -htmldata $nsxManagerAccountLockoutObject
-                $nsxManagerAccountLockoutObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-NsxManagerAccountLockout
-
-Function Publish-NsxEdgePasswordExpiration {
-    <#
-        .SYNOPSIS
-        Publish password expiration policy for NSX Edge.
-
-        .DESCRIPTION
-        The Publish-NsxEdgePasswordExpiration cmdlet returns password expiration policy for local users of NSX Local
-        Manager. The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password expiration policy for each local user of NSX Edge
-
-        .EXAMPLE
-        Publish-NsxEdgePasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return password expiration policy for each local user of NSX Edge nodes for all Workload Domains
-
-        .EXAMPLE
-        Publish-NsxEdgePasswordExpiration -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will return password expiration policy for each local user of NSX Edge nodes for a Workload Domain
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $localUsers = @("root","admin","audit","guestuser1","guestuser2")
-                $nsxEdgePasswordExpirationObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    if (($vcfNsxDetails = Get-NsxtServerDetail -fqdn $server -username $user -password $pass -domain $workloadDomain)) {
-                        if (Test-NSXTConnection -server $vcfNsxDetails.fqdn) {
-                            if (Test-NSXTAuthentication -server $vcfNsxDetails.fqdn -user $vcfNsxDetails.adminUser -pass $vcfNsxDetails.adminPass) {
-                                $nsxtEdgeNodes = (Get-NsxtEdgeCluster | Where-Object {$_.member_node_type -eq "EDGE_NODE"})
-                                foreach ($nsxtEdgeNode in $nsxtEdgeNodes.members) {
-                                    $nsxEdgePasswordExpiration = Request-LocalUserPasswordExpiration -server $server -user $user -pass $pass -domain $workloadDomain -vmName $nsxtEdgeNode.display_name -guestUser $vcfNsxDetails.rootUser -guestPassword $vcfNsxDetails.rootPass -localUser $localUsers; $nsxEdgePasswordExpirationObject += $nsxEdgePasswordExpiration
-                                }
-                            }
-                        }
-                    }
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        if (($vcfNsxDetails = Get-NsxtServerDetail -fqdn $server -username $user -password $pass -domain $domain.name)) {
-                            if (Test-NSXTConnection -server $vcfNsxDetails.fqdn) {
-                                if (Test-NSXTAuthentication -server $vcfNsxDetails.fqdn -user $vcfNsxDetails.adminUser -pass $vcfNsxDetails.adminPass) {
-                                    $nsxtEdgeNodes = (Get-NsxtEdgeCluster | Where-Object {$_.member_node_type -eq "EDGE_NODE"})
-                                    foreach ($nsxtEdgeNode in $nsxtEdgeNodes.members) {
-                                        $nsxEdgePasswordExpiration = Request-LocalUserPasswordExpiration -server $server -user $user -pass $pass -domain $domain.name -vmName $nsxtEdgeNode.display_name -guestUser $vcfNsxDetails.rootUser -guestPassword $vcfNsxDetails.rootPass -localUser $localUsers; $nsxEdgePasswordExpirationObject += $nsxEdgePasswordExpiration
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                $nsxEdgePasswordExpirationObject = $nsxEdgePasswordExpirationObject | Sort-Object 'Workload Domain', 'Virtual Machine', 'Local User' | ConvertTo-Html -Fragment -PreContent '<a id="nsxedge-password-expiration"></a><h3>NSX Edge - Password Expiration</h3>' -As Table
-                $nsxEdgePasswordExpirationObject = Convert-CssClass -htmldata $nsxEdgePasswordExpirationObject
-                $nsxEdgePasswordExpirationObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-NsxEdgePasswordExpiration
-
-Function Publish-NsxEdgePasswordComplexity {
-    <#
-        .SYNOPSIS
-        Publish password complexity policy for NSX Edge.
-
-        .DESCRIPTION
-        The Publish-NsxEdgePasswordComplexity cmdlet returns password complexity policy for local users of NSX Local
-        Manager. The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects password complexity policy for each local user of NSX Edge
-
-        .EXAMPLE
-        Publish-NsxEdgePasswordComplexity -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return password complexity policy for each local user of NSX Edge nodes for all Workload Domains
-
-        .EXAMPLE
-        Publish-NsxEdgePasswordComplexity -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will return password complexity policy for each local user of NSX Edge nodes for a Workload Domain
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $nsxEdgePasswordComplexityObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    $nsxEdgePasswordComplexity = Request-NsxtEdgePasswordComplexity -server $server -user $user -pass $pass -domain $workloadDomain; $nsxEdgePasswordComplexityObject += $nsxEdgePasswordComplexity
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        $nsxEdgePasswordComplexity = Request-NsxtEdgePasswordComplexity -server $server -user $user -pass $pass -domain $domain.name; $nsxEdgePasswordComplexityObject += $nsxEdgePasswordComplexity
-                    }
-                }
-                
-                $nsxEdgePasswordComplexityObject = $nsxEdgePasswordComplexityObject | Sort-Object 'Workload Domain', 'Virtual Machine', 'Local User' | ConvertTo-Html -Fragment -PreContent '<a id="nsxedge-password-complexity"></a><h3>NSX Edge - Password Complexity</h3>' -As Table
-                $nsxEdgePasswordComplexityObject = Convert-CssClass -htmldata $nsxEdgePasswordComplexityObject
-                $nsxEdgePasswordComplexityObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-NsxEdgePasswordComplexity
-
-Function Publish-NsxEdgeAccountLockout {
-    <#
-        .SYNOPSIS
-        Publish account lockout policy for NSX Edge.
-
-        .DESCRIPTION
-        The Publish-NsxEdgeAccountLockout cmdlet returns account lockout policy for local users of NSX Local
-        Manager. The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity and authentication is possible to SDDC Manager
-        - Validates that network connectivity and authentication is possible to vCenter Server
-        - Collects account lockout policy for NSX Edge node
-
-        .EXAMPLE
-        Publish-NsxEdgeAccountLockout -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -allDomains
-        This example will return account lockout policy for each NSX Edge nodes for all Workload Domains
-
-        .EXAMPLE
-        Publish-NsxEdgeAccountLockout -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -workloadDomain sfo-w01
-        This example will return account lockout policy for each NSX Edge nodes for a Workload Domain
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (ParameterSetName = 'All-WorkloadDomains', Mandatory = $true)] [ValidateNotNullOrEmpty()] [Switch]$allDomains,
-        [Parameter (ParameterSetName = 'Specific-WorkloadDomain', Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$workloadDomain
-    )
-
-    Try {
-        if (Test-VCFConnection -server $server) {
-            if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $nsxEdgeAccountLockoutObject = New-Object System.Collections.ArrayList
-                if ($PsBoundParameters.ContainsKey('workloadDomain')) {
-                    $nsxEdgeAccountLockout = Request-NsxtEdgeAccountLockout -server $server -user $user -pass $pass -domain $workloadDomain; $nsxEdgeAccountLockoutObject += $nsxEdgeAccountLockout
-                } elseif ($PsBoundParameters.ContainsKey('allDomains')) {
-                    $allWorkloadDomains = Get-VCFWorkloadDomain
-                    foreach ($domain in $allWorkloadDomains ) {
-                        $nsxEdgeAccountLockout = Request-NsxtEdgeAccountLockout -server $server -user $user -pass $pass -domain $domain.name; $nsxEdgeAccountLockoutObject += $nsxEdgeAccountLockout
-                    }
-                }
-                
-                $nsxEdgeAccountLockoutObject = $nsxEdgeAccountLockoutObject | Sort-Object 'Workload Domain', 'Virtual Machine', 'Local User' | ConvertTo-Html -Fragment -PreContent '<a id="nsxedge-account-lockout"></a><h3>NSX Edge - Account Lockout</h3>' -As Table
-                $nsxEdgeAccountLockoutObject = Convert-CssClass -htmldata $nsxEdgeAccountLockoutObject
-                $nsxEdgeAccountLockoutObject
-            }
-        }
-    } Catch {
-        Debug-CatchWriter -object $_
-    }
-}
-Export-ModuleMember -Function Publish-NsxEdgeAccountLockout
-
-##########################################  E N D   O F   F U N C T I O N S  ##########################################
-#######################################################################################################################
-
-
-#######################################################################################################################
 ###############################  S Y S T E M   O V E R V I E W   F U N C T I O N S   ##################################
 
 Function Publish-VcfSystemOverview {
     <#
         .SYNOPSIS
-        Publish system overview report.
+        Publishs a system overview report.
 
         .DESCRIPTION
-        The Publish-VcfSystemOverview cmdlet returns password policy from NSX-T Data Center by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
-        - Validates that network connectivity is available to the NSX Manager instance
-        - Validates the authentication to NSX Manager with credentials from SDDC Manager
-        - Collects password policy from all ESXi hosts in vCenter Server instance
+        The Publish-VcfSystemOverview cmdlet returns an overview of the Vmware Cloud Foundation instance.
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
+        - Validates that network connectivity is available to the SDDC Manager instance
+        - Collects the system overview details from the environment
 
         .EXAMPLE
         Publish-VcfSystemOverview -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1!
-        This example will return system overview report for SDDC Manager for a all workload domains.
+        This example will return system overview report for a all workload domains.
 
         .EXAMPLE
         Publish-VcfSystemOverview -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -anonymized
-        This example will return system overview report for SDDC Manager for a all workload domains, but with anonymized data.
+        This example will return system overview report for a all workload domains, but with anonymized data.
     #>
 
     Param (
@@ -7882,7 +6869,7 @@ Function Publish-VcfSystemOverview {
                     $esxiOverview = Request-EsxiOverview -server $server -user $user -pass $pass -anonymized
                     $clusterOverview = Request-ClusterOverview -server $server -user $user -pass $pass -anonymized
                     $networkingOverview = Request-NetworkOverview -server $server -user $user -pass $pass -anonymized
-                    $vrealizeOverview = Request-VrealizeOverview -server $server -user $user -pass $pass -anonymized
+                    $ariaSuiteOverview = Request-VMwareAriaSuiteOverview -server $server -user $user -pass $pass -anonymized
                     $vvsOverview = Request-ValidatedSolutionOverview -server $server -user $user -pass $pass
                 } else {
                     $vcfOverview = Request-VcfOverview -server $server -user $user -pass $pass
@@ -7891,7 +6878,7 @@ Function Publish-VcfSystemOverview {
                     $clusterOverview = Request-ClusterOverview -server $server -user $user -pass $pass
                     $esxiOverview = Request-EsxiOverview -server $server -user $user -pass $pass
                     $networkingOverview = Request-NetworkOverview -server $server -user $user -pass $pass
-                    $vrealizeOverview = Request-VrealizeOverview -server $server -user $user -pass $pass
+                    $ariaSuiteOverview = Request-VMwareAriaSuiteOverview -server $server -user $user -pass $pass
                     $vvsOverview = Request-ValidatedSolutionOverview -server $server -user $user -pass $pass
                 }
 
@@ -7907,11 +6894,11 @@ Function Publish-VcfSystemOverview {
                 $esxiOverview = Convert-CssClass -htmldata $esxiOverview
                 $networkingOverview = $networkingOverview | ConvertTo-Html -Fragment -PreContent '<h4>Networking Overview</h4>'
                 $networkingOverview = Convert-CssClass -htmldata $networkingOverview
-                if ($vrealizeOverview) {
-                    $vrealizeOverview = $vrealizeOverview | ConvertTo-Html -Fragment -PreContent '<h4>vRealize Suite Overview</h4>'
-                    $vrealizeOverview = Convert-CssClass -htmldata $vrealizeOverview
+                if ($ariaSuiteOverview) {
+                    $ariaSuiteOverview = $ariaSuiteOverview | ConvertTo-Html -Fragment -PreContent '<h4>VMware Aria Suite Overview</h4>'
+                    $ariaSuiteOverview = Convert-CssClass -htmldata $ariaSuiteOverview
                 } else {
-                    $vrealizeOverview = $vrealizeOverview | ConvertTo-Html -Fragment -PreContent '<h4>vRealize Suite Overview</h4>' -PostContent '<p>No vRealize Suite Installed.</p>'
+                    $ariaSuiteOverview = $ariaSuiteOverview | ConvertTo-Html -Fragment -PreContent '<h4>VMware Aria Suite Overview</h4>' -PostContent '<p>No VMware Aria Suite products deployed in VMware Cloud Foundation mode.</p>'
                 }
                 $vvsOverview = $vvsOverview | ConvertTo-Html -Fragment -PreContent '<h4>VMware Validated Solutions Overview</h4>'
                 $vvsOverview = Convert-CssClass -htmldata $vvsOverview
@@ -7921,7 +6908,7 @@ Function Publish-VcfSystemOverview {
                 $allOverviewObject += $vcenterOverview
                 $allOverviewObject += $clusterOverview
                 $allOverviewObject += $networkingOverview
-                $allOverviewObject += $vrealizeOverview
+                $allOverviewObject += $ariaSuiteOverview
                 $allOverviewObject += $vvsOverview
                 $allOverviewObject += $esxiOverview
                 $allOverviewObject
@@ -7941,7 +6928,7 @@ Function Request-VcfOverview {
 
         .DESCRIPTION
         The Request-VcfOverview cmdlet returns an overview of the SDDC Manager instance.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Collects the overview detail
 
@@ -8007,7 +6994,7 @@ Function Request-HardwareOverview {
 
         .DESCRIPTION
         The Request-VcfOverview cmdlet returns an overview of the hardware in an SDDC Manager instance.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Collects the hardware details
 
@@ -8090,7 +7077,7 @@ Function Request-VcenterOverview {
 
         .DESCRIPTION
         The Request-VcenterOverview cmdlet returns an overview of the vSphere environment managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity and authentication to the SDDC Manager instance
         - Validates that network connectivity and authentication to the vCenter Server instances
         - Collects the vSphere overview detail
@@ -8163,7 +7150,7 @@ Function Request-EsxiOverview {
 
         .DESCRIPTION
         The Request-EsxiOverview cmdlet returns an overview of the ESXi host managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity and authentication to the SDDC Manager instance
         - Validates that network connectivity and authentication to the vCenter Server instances
         - Collects the ESXi host overview detail
@@ -8171,6 +7158,14 @@ Function Request-EsxiOverview {
         .EXAMPLE
         Request-EsxiOverview -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1!
         This example will return an overview of the ESXi hosts managed by the SDDC Manager instance.
+
+        .EXAMPLE
+        Request-EsxiOverview -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -subscription
+        This example will return an overview of the ESXi hosts managed by the SDDC Manager instance with the number of cores for VCF+ subscription.
+
+        .EXAMPLE
+        Request-EsxiOverview -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -subscription -outputCsv F:\Reporting
+        This example will return an overview of the ESXi hosts managed by the SDDC Manager instance with the number of cores for VCF+ subscription and save as a CSV file to F:\Reporting.
 
         .EXAMPLE
         Request-EsxiOverview -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -anonymized
@@ -8181,7 +7176,9 @@ Function Request-EsxiOverview {
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$server,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$user,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$pass,
-        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$anonymized
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$anonymized,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [Switch]$subscription,
+        [Parameter (Mandatory = $false)] [ValidateNotNullOrEmpty()] [String]$outputCsv
     )
 
     Try {
@@ -8194,6 +7191,16 @@ Function Request-EsxiOverview {
                         $allAssignedEsxiHosts = (Get-VCFHost | Where-Object {$_.domain.id -eq $domain.id})
                         foreach ($assignedEsxiHost in $allAssignedEsxiHosts) {
                             $customObject = New-Object -TypeName psobject
+
+                            $sockets = $assignedEsxiHost.cpu.cpuCores.Count
+                            $coresPerSocket = $assignedEsxiHost.cpu.Cores / $sockets
+
+                            if ($coresPerSocket -le 16) {
+                                $vcfPlusLicenseCount = $sockets * 16
+                            } else {
+                                $vcfPlusLicenseCount = $sockets * $coresPerSocket
+                            }
+
                             if ($PsBoundParameters.ContainsKey('anonymized')) {
                                 $customObject | Add-Member -notepropertyname "Domain UUID" -notepropertyvalue $domain.id
                                 $customObject | Add-Member -notepropertyname "Cluster UUID" -notepropertyvalue $cluster.id
@@ -8203,7 +7210,11 @@ Function Request-EsxiOverview {
                                 $customObject | Add-Member -notepropertyname "Hardware Platform" -notepropertyvalue $assignedEsxiHost.hardwareModel
                                 $customObject | Add-Member -notepropertyname "CPU Sockets" -notepropertyvalue $assignedEsxiHost.cpu.cpuCores.Count
                                 $customObject | Add-Member -notepropertyname "CPU Cores" -notepropertyvalue $assignedEsxiHost.cpu.Cores
+                                $customObject | Add-Member -notepropertyname "CPU Cores per Socket" -notepropertyvalue ($assignedEsxiHost.cpu.Cores / $assignedEsxiHost.cpu.cpuCores.Count)
                                 $customObject | Add-Member -notepropertyname "Memory (GB)" -notepropertyvalue ([Math]::round(($assignedEsxiHost.memory.totalCapacityMB) / 1024))
+                                if ($PsBoundParameters.ContainsKey('subscription')) {
+                                    $customObject | Add-Member -notepropertyname "VCF+ Subscription Core Count" -notepropertyvalue $vcfPlusLicenseCount
+                                }
                                 $customObject | Add-Member -notepropertyname "Status" -notepropertyvalue $assignedEsxiHost.status
                             } else {
                                 $customObject | Add-Member -notepropertyname "Domain Name" -notepropertyvalue $domain.name
@@ -8214,17 +7225,30 @@ Function Request-EsxiOverview {
                                 $customObject | Add-Member -notepropertyname "Hardware Platform" -notepropertyvalue $assignedEsxiHost.hardwareModel
                                 $customObject | Add-Member -notepropertyname "CPU Sockets" -notepropertyvalue $assignedEsxiHost.cpu.cpuCores.Count
                                 $customObject | Add-Member -notepropertyname "CPU Cores" -notepropertyvalue $assignedEsxiHost.cpu.Cores
+                                $customObject | Add-Member -notepropertyname "CPU Cores per Socket" -notepropertyvalue ($assignedEsxiHost.cpu.Cores / $assignedEsxiHost.cpu.cpuCores.Count)
                                 $customObject | Add-Member -notepropertyname "Memory (GB)" -notepropertyvalue ([Math]::round(($assignedEsxiHost.memory.totalCapacityMB) / 1024))
+                                if ($PsBoundParameters.ContainsKey('subscription')) {
+                                    $customObject | Add-Member -notepropertyname "VCF+ Subscription Core Count" -notepropertyvalue $vcfPlusLicenseCount
+                                }
                                 $customObject | Add-Member -notepropertyname "Status" -notepropertyvalue $assignedEsxiHost.status
                             }
                             $allEsxiHostObject += $customObject
-
                         }
                     }
                 }
                 $allUnassignedEsxiHosts = (Get-VCFHost | Where-Object {$_.status -eq "UNASSIGNED_USEABLE"})
                 foreach ($unassignedEsxiHost in $allUnassignedEsxiHosts) {
                     $customObject = New-Object -TypeName psobject
+
+                    $sockets = $unassignedEsxiHost.cpu.cpuCores.Count
+                    $coresPerSocket = $unassignedEsxiHost.cpu.Cores / $sockets
+
+                    if ($coresPerSocket -le 16) {
+                        $vcfPlusLicenseCount = $sockets * 16
+                    } else {
+                        $vcfPlusLicenseCount = $sockets * $coresPerSocket
+                    }
+
                     if ($PsBoundParameters.ContainsKey('anonymized')) {
                         $customObject | Add-Member -NotePropertyName 'Domain UUID' -NotePropertyValue ""
                         $customObject | Add-Member -notepropertyname "Cluster UUID" -notepropertyvalue ""
@@ -8234,7 +7258,11 @@ Function Request-EsxiOverview {
                         $customObject | Add-Member -notepropertyname "Hardware Platform" -notepropertyvalue $assignedEsxiHost.hardwareModel
                         $customObject | Add-Member -notepropertyname "CPU Sockets" -notepropertyvalue $assignedEsxiHost.cpu.cpuCores.Count
                         $customObject | Add-Member -notepropertyname "CPU Cores" -notepropertyvalue $assignedEsxiHost.cpu.Cores
+                        $customObject | Add-Member -notepropertyname "CPU Cores per Socket" -notepropertyvalue ($assignedEsxiHost.cpu.Cores / $assignedEsxiHost.cpu.cpuCores.Count)
                         $customObject | Add-Member -notepropertyname "Memory (GB)" -notepropertyvalue ([Math]::round(($unassignedEsxiHost.memory.totalCapacityMB) / 1024))
+                        if ($PsBoundParameters.ContainsKey('subscription')) {
+                            $customObject | Add-Member -notepropertyname "VCF+ Subscription Core Count" -notepropertyvalue $vcfPlusLicenseCount
+                        }
                         $customObject | Add-Member -notepropertyname "Status" -notepropertyvalue $unassignedEsxiHost.status
                     } else {
                         $customObject | Add-Member -notepropertyname "Domain Name" -notepropertyvalue ""
@@ -8245,12 +7273,24 @@ Function Request-EsxiOverview {
                         $customObject | Add-Member -notepropertyname "Hardware Platform" -notepropertyvalue $assignedEsxiHost.hardwareModel
                         $customObject | Add-Member -notepropertyname "CPU Sockets" -notepropertyvalue $assignedEsxiHost.cpu.cpuCores.Count
                         $customObject | Add-Member -notepropertyname "CPU Cores" -notepropertyvalue $assignedEsxiHost.cpu.Cores
+                        $customObject | Add-Member -notepropertyname "CPU Cores per Socket" -notepropertyvalue ($assignedEsxiHost.cpu.Cores / $assignedEsxiHost.cpu.cpuCores.Count)
                         $customObject | Add-Member -notepropertyname "Memory (GB)" -notepropertyvalue ([Math]::round(($unassignedEsxiHost.memory.totalCapacityMB) / 1024))
+                        if ($PsBoundParameters.ContainsKey('subscription')) {
+                            $customObject | Add-Member -notepropertyname "VCF+ Subscription Core Count" -notepropertyvalue $vcfPlusLicenseCount
+                        }
                         $customObject | Add-Member -notepropertyname "Status" -notepropertyvalue $unassignedEsxiHost.status
                     }
                     $allEsxiHostObject += $customObject
                 }
-                $allEsxiHostObject | Sort-Object -Property Status,  'Domain Name', 'Domain UUID', 'Cluster Name', 'Cluster UUID', 'ESXi Host FQDN', 'ESXi Host UUID'
+
+                if ($PsBoundParameters.ContainsKey('outputCsv')) {
+                    $csv = Start-CreateOutputCsvDirectory -csvFolder $outputCsv -csvFileSuffix $server
+                    $allEsxiHostObject | ConvertTo-Csv -NoTypeInformation | Out-File $csv
+                    Write-Output "CSV file saved to $csv"
+                } else {
+                    $allEsxiHostObject | Sort-Object -Property Status,  'Domain Name', 'Domain UUID', 'Cluster Name', 'Cluster UUID', 'ESXi Host FQDN', 'ESXi Host UUID'
+                }
+                
             }
         }
     }
@@ -8267,7 +7307,7 @@ Function Request-ClusterOverview {
 
         .DESCRIPTION
         The Request-ClusterOverview cmdlet returns an overview of the vSphere environment managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity and authentication to the SDDC Manager instance
         - Validates that network connectivity and authentication to the vCenter Server instances
         - Collects the vSphere overview detail
@@ -8325,7 +7365,7 @@ Function Request-NetworkOverview {
 
         .DESCRIPTION
         The Request-NetworkOverview cmdlet returns an overview of the networking managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity and authentication to the SDDC Manager instance
         - Collects the networking overview detail
 
@@ -8382,24 +7422,25 @@ Function Request-NetworkOverview {
 }
 Export-ModuleMember -Function Request-NetworkOverview
 
-Function Request-VrealizeOverview {
+Function Request-VMwareAriaSuiteOverview {
     <#
         .SYNOPSIS
-        Returns overview of vRealize Suite.
+        Returns an overview of VMware Aria Suite products managed by SDDC Manager.
 
         .DESCRIPTION
-        The Request-VrealizeOverview cmdlet returns an overview of vRealize Suite managed by SDDC Manager.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The Request-VMwareAriaSuiteOverview cmdlet returns an overview of VMware Aria Suite products managed by SDDC Manager.
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity and authentication to the SDDC Manager instance
-        - Collects the networking overview detail
+        - Collects the VMware Aria Suite product overview detail
 
         .EXAMPLE
-        Request-VrealizeOverview -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1!
-        This example will return an overview of vRealize Suite managed by the SDDC Manager instance.
+        Request-VMwareAriaSuiteOverview -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1!
+        This example will return an overview of VMware Aria Suite products managed by the SDDC Manager instance.
 
         .EXAMPLE
-        Request-VrealizeOverview -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -anonymized
-        This example will return an overview of vRealize Suite managed by the SDDC Manager instance, but will anonymize the output.
+        Request-VMwareAriaSuiteOverview -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -anonymized
+        This example will return an overview of VMware Aria Suite products managed by the SDDC Manager instance, but
+        will anonymize the output.
     #>
 
     Param (
@@ -8412,37 +7453,57 @@ Function Request-VrealizeOverview {
     Try {
         if (Test-VCFConnection -server $server) {
             if (Test-VCFAuthentication -server $server -user $user -pass $pass) {
-                $allVrealizeObject = New-Object System.Collections.ArrayList
+                $allAriaSuiteObject = New-Object System.Collections.ArrayList
                 $vcfApiCmdlet = @("Get-VCFvRSLCM","Get-VCFWSA","Get-VCFvRLI","Get-VCFvROPS","Get-VCFvRA")
                 foreach ($apiCmdlet in $vcfApiCmdlet) {
                     if ((Invoke-Expression $apiCmdlet).status -eq "ACTIVE") {
-                        if ($apiCmdlet -eq "Get-VCFvRSLCM") {$nodeCount = "1" } else { ($nodeCount = ((Invoke-Expression $apiCmdlet).nodes).Count)}
+                        if ($apiCmdlet -eq "Get-VCFvRSLCM") {
+                            $product = "VMware Aria Suite Lifecycle"
+                            $nodeCount = "1"
+                        }
+                        elseif ($apiCmdlet -eq "Get-VCFWSA") {
+                            $product = "VMware Workspace ONE Access"
+                            $nodeCount = (Get-VCFWSA).nodes.Count
+                        }
+                        elseif ($apiCmdlet -eq "Get-VCFvRLI") {
+                            $product = "VMware Aria Operations for Logs"
+                            $nodeCount = (Get-VCFvRLI).nodes.Count
+                        }
+                        elseif ($apiCmdlet -eq "Get-VCFvROPS") {
+                            $product = "VMware Aria Operations"
+                            $nodeCount = (Get-VCFvROPS).nodes.Count
+                        }
+                        elseif ($apiCmdlet -eq "Get-VCFvRA") {
+                            $product = "VMware Aria Automation"
+                            $nodeCount = (Get-VCFvRA).nodes.Count
+                        }
+                        
                         $customObject = New-Object -TypeName psobject
-                        $customObject | Add-Member -notepropertyname "vRealize Product" -notepropertyvalue ((Get-Help -Name $apiCmdlet).synopsis -Split ("Get the existing ") | Select-Object -Last 1)
-                        if ($PsBoundParameters.ContainsKey('anonymized')) {
-                            $customObject | Add-Member -notepropertyname "UUID" -notepropertyvalue (Invoke-Expression $apiCmdlet).id
+                        $customObject | Add-Member -NotePropertyName "VMware Aria Suite Product" -NotePropertyValue $product
+                        if ($PsBoundParameters.ContainsKey("anonymized")) {
+                            $customObject | Add-Member -NotePropertyName "UUID" -NotePropertyValue (Invoke-Expression $apiCmdlet).id
                         } else {
                             if ($apiCmdlet -eq "Get-VCFvRSLCM") {
-                                $customObject | Add-Member -notepropertyname "FQDN" -notepropertyvalue (Invoke-Expression $apiCmdlet).fqdn
+                                $customObject | Add-Member -NotePropertyName "FQDN" -NotePropertyValue (Invoke-Expression $apiCmdlet).fqdn
                             } else {
-                                $customObject | Add-Member -notepropertyname "FQDN" -notepropertyvalue (Invoke-Expression $apiCmdlet).loadBalancerFqdn
+                                $customObject | Add-Member -NotePropertyName "FQDN" -NotePropertyValue (Invoke-Expression $apiCmdlet).loadBalancerFqdn
                             }
                         }
-                        $customObject | Add-Member -notepropertyname "Version" -notepropertyvalue (Invoke-Expression $apiCmdlet).version
-                        $customObject | Add-Member -notepropertyname "Status" -notepropertyvalue (Invoke-Expression $apiCmdlet).status
-                        $customObject | Add-Member -notepropertyname "Nodes" -notepropertyvalue $nodeCount
-                        $allVrealizeObject += $customObject
+                        $customObject | Add-Member -NotePropertyName "Version" -NotePropertyValue (Invoke-Expression $apiCmdlet).version
+                        $customObject | Add-Member -NotePropertyName "Status" -NotePropertyValue (Invoke-Expression $apiCmdlet).status
+                        $customObject | Add-Member -NotePropertyName "Nodes" -NotePropertyValue $nodeCount
+                        $allAriaSuiteObject += $customObject
                     }
                 }
-                $allVrealizeObject
+                $allAriaSuiteObject
             }
         }
     }
-	Catch {
+    Catch {
         Debug-ExceptionWriter -object $_
     }
 }
-Export-ModuleMember -Function Request-VrealizeOverview
+Export-ModuleMember -Function Request-VMwareAriaSuiteOverview
 
 Function Request-ValidatedSolutionOverview {
     <#
@@ -8451,7 +7512,7 @@ Function Request-ValidatedSolutionOverview {
 
         .DESCRIPTION
         The Request-ValidatedSolutionOverview cmdlet returns an overview of VMware Validated Solutions deployed.
-        The cmdlet connects to the SDDC Manager using the -server, -user, and -password values:
+        The cmdlet connects to the SDDC Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Collects the VMware Validated Solution details
 
@@ -8611,28 +7672,55 @@ Function Test-VcfReportingPrereq {
         The Test-VcfReportingPrereq cmdlet checks that all the prerequisites have been met to run the PowerShell module.
 
         .EXAMPLE
-        Test-VcfReportingPrereq
+        Test-VcfReportingPrereq -sddcManagerFqdn sfo-vcf01.sfo.rainpole.io -sddcManagerUser admin@local -sddcManagerPass VMw@re1!VMw@re1!
         This example runs the prerequisite validation.
     #>
 
+    Param (
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerFqdn,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerUser,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerPass
+    )
+
     Try {
+        Clear-Host; Write-Host ""
+
+        $vcfMinVersion = "4.4.0"
+
         $modules = @(
-            @{ Name=("VMware.PowerCLI"); Version=("12.7.0")}
-            @{ Name=("VMware.vSphere.SsoAdmin"); Version=("1.3.8")}
-            @{ Name=("PowerVCF"); Version=("2.2.0")}
-            @{ Name=("PowerValidatedSolutions"); Version=("2.0.0")}
+            @{ Name=("VMware.PowerCLI"); MinimumVersion=("13.0.0")}
+            @{ Name=("VMware.vSphere.SsoAdmin"); MinimumVersion=("1.3.9")}
+            @{ Name=("PowerVCF"); MinimumVersion=("2.3.0")}
+            @{ Name=("PowerValidatedSolutions"); MinimumVersion=("2.2.0")}
         )
-        foreach ($module in $modules ) {
-            if ((Get-InstalledModule -Name $module.Name).Version -lt $module.Version) {
-                $message = "PowerShell Module: $($module.Name) Version: $($module.Version) Not Installed, Please update before proceeding."
-                Write-Warning $message; Write-Host ""
-                break
-            } else {
-                $moduleCurrentVersion = (Get-InstalledModule -Name $module.Name).Version
-                $message = "PowerShell Module: $($module.Name) Version: $($moduleCurrentVersion) Found, Supports the minimum required version."
-                $message
+
+        if (Test-VCFConnection -server $sddcManagerFqdn) {
+            if (Test-VCFAuthentication -server $sddcManagerFqdn -user $sddcManagerUser -pass $sddcManagerPass) {           
+
+                $vcfVersion = ((Get-VCFManager).version).Split('-')[0]
+                if ($vcfVersion -lt $vcfMinVersion) {
+                    $message = "VMware Cloud Foundation: SDDC Manager $vcfVersion ($($sddcManagerFqdn)) is not supported by this module. Minimum required version is $($vcfMinVersion)."
+                    Show-ReportingOutput -type ERROR -message $message
+                    Break
+                } else {
+                    $message = "VMware Cloud Foundation: SDDC Manager $vcfVersion ($($sddcManagerFqdn)) and supports the minimum required version."
+                    Show-ReportingOutput -Type INFO -Message $message
+                }
+
+                foreach ($module in $modules ) {
+                    if ((Get-InstalledModule -ErrorAction SilentlyContinue -Name $module.Name).Version -lt $module.MinimumVersion) {
+                        $message = "PowerShell Module: $($module.Name) $($module.MinimumVersion) minimum required version is not installed."
+                        Show-ReportingOutput -type ERROR -message $message
+                        Break
+                    } else {
+                        $moduleCurrentVersion = (Get-InstalledModule -Name $module.Name).Version
+                        $message = "PowerShell Module: $($module.Name) $($moduleCurrentVersion) is installed and supports the minimum required version."
+                        Show-ReportingOutput -Type INFO -Message $message
+                    }
+                }
             }
         }
+        
     }
     Catch {
         Write-Error $_.Exception.Message
@@ -8640,11 +7728,42 @@ Function Test-VcfReportingPrereq {
 }
 Export-ModuleMember -Function Test-VcfReportingPrereq
 
+Function Show-ReportingOutput {
+    
+    Param (
+        [Parameter (Mandatory = $true)] [AllowEmptyString()] [String]$message,
+        [Parameter (Mandatory = $false)] [ValidateSet("INFO", "ERROR", "WARNING", "EXCEPTION","ADVISORY","NOTE","QUESTION","WAIT")] [String]$type = "INFO",
+        [Parameter (Mandatory = $false)] [Switch]$skipnewline
+    )
+
+    If ($type -eq "INFO") {
+        $messageColour = "92m" #Green
+    } elseIf ($type -in "ERROR","EXCEPTION") {
+        $messageColour = "91m" # Red
+    } elseIf ($type -in "WARNING","ADVISORY","QUESTION") {
+        $messageColour = "93m" #Yellow
+    } elseIf ($type -in "NOTE","WAIT") {
+        $messageColour = "97m" # White
+    }
+
+    $ESC = [char]0x1b
+    $timestampColour = "97m"
+
+    $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
+
+    If ($skipnewline) {
+        Write-Host -NoNewline "$ESC[${timestampcolour} [$timestamp]$ESC[${threadColour} $ESC[${messageColour} [$type] $message$ESC[0m"
+    } else {
+        Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${threadColour} $ESC[${messageColour} [$type] $message$ESC[0m"
+    }
+}
+Export-ModuleMember -Function Show-ReportingOutput
+
 Function Start-CreateReportDirectory {
     Param (
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$path,
         [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$sddcManagerFqdn,
-        [Parameter (Mandatory = $true)] [ValidateSet("health","alert","config","upgrade","policy","overview")] [String]$reportType
+        [Parameter (Mandatory = $true)] [ValidateSet("health","alert","config","upgrade","overview")] [String]$reportType
     )
 
     $filetimeStamp = Get-Date -Format "MM-dd-yyyy_hh_mm_ss"
@@ -8652,7 +7771,6 @@ Function Start-CreateReportDirectory {
     if ($reportType -eq "alert") { $Global:reportFolder = $path + '\AlertReports\' }
     if ($reportType -eq "config") { $Global:reportFolder = $path + '\ConfigReports\' }
     if ($reportType -eq "upgrade") { $Global:reportFolder = $path + '\UpgradeReports\' }
-    if ($reportType -eq "policy") { $Global:reportFolder = $path + '\PolicyReports\' }
     if ($reportType -eq "overview") { $Global:reportFolder = $path + '\OverviewReports\' }
     if ($PSEdition -eq "Core" -and ($PSVersionTable.OS).Split(' ')[0] -eq "Linux") {
         $reportFolder = ($reportFolder).split('\') -join '/' | Split-Path -NoQualifier
@@ -8665,6 +7783,54 @@ Function Start-CreateReportDirectory {
 }
 Export-ModuleMember -Function Start-CreateReportDirectory
 
+Function Start-CreateOutputJsonDirectory {
+    Param (
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$jsonFolder,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$jsonFileSuffix
+    )
+
+    $filetimeStamp = Get-Date -Format "MM-dd-yyyy_hh_mm_ss"
+    $Global:jsonFolder = $jsonFolder
+    $jsonName = $filetimeStamp + "-" + $jsonFileSuffix
+
+    if ($PSEdition -eq "Core" -and ($PSVersionTable.OS).Split(' ')[0] -eq "Linux") {
+        $jsonDestination = ($jsonDestination = ($jsonFolder + "\" + $jsonName)).split('\') -join '/' | Split-Path -NoQualifier
+        $jsonFolder = ($jsonFolder).split('\') -join '/' | Split-Path -NoQualifier
+    } else {
+        $jsonDestination = ($jsonFolder + "\" + $jsonName)
+    }
+
+    if (!(Test-Path -Path $jsonFolder)) {
+        New-Item -Path $jsonFolder -ItemType "directory" | Out-Null
+    }
+
+    $jsonDestination
+}
+
+Function Start-CreateOutputCsvDirectory {
+    Param (
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$csvFolder,
+        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$csvFileSuffix
+    )
+
+    $filetimeStamp = Get-Date -Format "MM-dd-yyyy_hh_mm_ss"
+    $Global:csvFolder = $csvFolder
+    $csvName = $filetimeStamp + "-" + $csvFileSuffix + ".csv"
+
+    if ($PSEdition -eq "Core" -and ($PSVersionTable.OS).Split(' ')[0] -eq "Linux") {
+        $csvDestination = ($csvDestination = ($csvFolder + "\" + $csvName)).split('\') -join '/' | Split-Path -NoQualifier
+        $csvFolder = ($csvFolder).split('\') -join '/' | Split-Path -NoQualifier
+    } else {
+        $csvDestination = ($csvFolder + "\" + $csvName)
+    }
+
+    if (!(Test-Path -Path $csvFolder)) {
+        New-Item -Path $csvFolder -ItemType "directory" | Out-Null
+    }
+
+    $csvDestination
+}
+
 Function Invoke-SddcCommand {
     <#
 		.SYNOPSIS
@@ -8672,7 +7838,7 @@ Function Invoke-SddcCommand {
 
         .DESCRIPTION
         The Invoke-SddcCommand cmdlet runs a command within the SDDC Manager appliance. The cmdlet connects to SDDC
-        Manager using the -server, -user, and -password values:
+        Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the Management Domain vCenter Server instance
         - Runs the command provided within the SDDC Manager appliance
@@ -8718,17 +7884,17 @@ Function Copy-FiletoSddc {
 
         .DESCRIPTION
         The Copy-FiletoSddc cmdlet copies files to the SDDC Manager appliance. The cmdlet connects to SDDC
-        Manager using the -server, -user, and -password values:
+        Manager using the -server, -user, and -pass values:
         - Validates that network connectivity is available to the SDDC Manager instance
         - Validates that network connectivity is available to the Management Domain vCenter Server instance
         - Copies the files to the SDDC Manager appliance
 
         .EXAMPLE
-        Copy-FiletoSddc -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -rootPass VMw@re1! -source "C:\Temp\foo.txt" -destination "/home/vcf/foo.txt"
+        Copy-FiletoSddc -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -vmUser vcf -vmPass VMw@re1! -source "C:\Temp\foo.txt" -destination "/home/vcf/foo.txt"
         This example copies a file to the SDDC Manager appliance.
 
         .EXAMPLE
-        Copy-FiletoSddc -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -rootPass VMw@re1! -source "C:\Temp\bar" -destination "/home/vcf/"
+        Copy-FiletoSddc -server sfo-vcf01.sfo.rainpole.io -user admin@local -pass VMw@re1!VMw@re1! -vmuser vcf -vmPass VMw@re1! -source "C:\Temp\bar" -destination "/home/vcf/"
         This example copies a file to the SDDC Manager appliance.
     #>
 
@@ -8994,7 +8160,7 @@ Export-ModuleMember -Function Get-ClarityReportHeader
 
 Function Get-ClarityReportNavigation {
     Param (
-        [Parameter (Mandatory = $true)] [ValidateSet("health","alert","config","upgrade","policy","policyByProduct","overview")] [String]$reportType
+        [Parameter (Mandatory = $true)] [ValidateSet("health","alert","config","upgrade","overview")] [String]$reportType
     )
 
     if ($reportType -eq "health") { # Define the Clarity Cascading Style Sheets (CSS) for a Health Report
@@ -9014,6 +8180,7 @@ Function Get-ClarityReportNavigation {
                     <label for="general">General</label>
                     <ul class="nav-list">
                         <li><a class="nav-link" href="#general-service">Service Health</a></li>
+                        <li><a class="nav-link" href="#general-version">Version Health</a></li>
                         <li><a class="nav-link" href="#general-connectivity">Connectivity</a></li>
                     </ul>
                 </section>
@@ -9041,7 +8208,7 @@ Function Get-ClarityReportNavigation {
                     <label for="vcenter">vCenter Server</label>
                     <ul class="nav-list">
                         <li><a class="nav-link" href="#vcenter-overall">Overall Health</a></li>
-                        <li><a class="nav-link" href="#vcenter-ring">Single Sign-On Health</a></li>
+                        <li><a class="nav-link" href="#vcenter-ring-topology">Single Sign-On Health</a></li>
                     </ul>
                 </section>
                 <section class="nav-group collapsible">
@@ -9165,142 +8332,6 @@ Function Get-ClarityReportNavigation {
             </nav>
             <div class="content-container">
             <div class="content-area">'
-        $clarityCssNavigation
-    }
-
-    if ($reportType -eq "policyByProduct") { # Define the Clarity Cascading Style Sheets (CSS) for a Password Policy Report
-        $clarityCssNavigation = '
-                <nav class="subnav">
-                <ul class="nav">
-                <li class="nav-item">
-                    <a class="nav-link active" href="">Password Policy Report</a>
-                </li>
-                </ul>
-            </nav>
-            <div class="content-container">
-            <nav class="sidenav">
-            <section class="sidenav-content">
-                <section class="nav-group collapsible">
-                    <input id="sddcmanager" type="checkbox"/>
-                    <label for="sddcmanager">SDDC Manager</label>
-                    <ul class="nav-list">
-                        <li><a class="nav-link" href="#sddcmanager-password-expiration">Password Expiration</a></li>
-                        <li><a class="nav-link" href="#sddcmanager-password-complexity">Password Complexity</a></li>
-                        <li><a class="nav-link" href="#sddcmanager-account-lockout">Account Lockout</a></li>
-                    </ul>
-                </section>           
-                <section class="nav-group collapsible">
-                    <input id="sso" type="checkbox"/>
-                    <label for="sso">vCenter Single Sign-On</label>
-                    <ul class="nav-list">
-                        <li><a class="nav-link" href="#sso-password-expiration">Password Expiration</a></li>
-                        <li><a class="nav-link" href="#sso-password-complexity">Password Complexity</a></li>
-                        <li><a class="nav-link" href="#sso-account-lockout">Account Lockout</a></li>
-                    </ul>
-                </section>
-                <section class="nav-group collapsible">
-                    <input id="vcenter" type="checkbox"/>
-                    <label for="vcenter">vCenter Server</label>
-                    <ul class="nav-list">
-                        <li><a class="nav-link" href="#vcenter-password-expiration">Password Expiration</a></li>
-                    </ul>
-                </section>
-                <section class="nav-group collapsible">
-                    <input id="vcenter-local" type="checkbox"/>
-                    <label for="vcenter-local">vCenter Server (Local Users) </label>
-                    <ul class="nav-list">
-                        <li><a class="nav-link" href="#vcenter-password-expiration-local">Password Expiration</a></li>
-                        <li><a class="nav-link" href="#vcenter-password-complexity-local">Password Complexity</a></li>
-                        <li><a class="nav-link" href="#vcenter-account-lockout-local">Account Lockout</a></li>
-                    </ul>
-                </section>
-                <section class="nav-group collapsible">
-                    <input id="nsxmanager" type="checkbox"/>
-                    <label for="nsxmanager">NSX Manager</label>
-                    <ul class="nav-list">
-                        <li><a class="nav-link" href="#nsxmanager-password-expiration">Password Expiration</a></li>
-                        <li><a class="nav-link" href="#nsxmanager-password-complexity">Password Complexity</a></li>
-                        <li><a class="nav-link" href="#nsxmanager-account-lockout">Account Lockout</a></li>
-                    </ul>
-                </section>
-                <section class="nav-group collapsible">
-                    <input id="nsxedge" type="checkbox"/>
-                    <label for="nsxedge">NSX Edge</label>
-                    <ul class="nav-list">
-                        <li><a class="nav-link" href="#nsxedge-password-expiration">Password Expiration</a></li>
-                        <li><a class="nav-link" href="#nsxedge-password-complexity">Password Complexity</a></li>
-                        <li><a class="nav-link" href="#nsxedge-account-lockout">Account Lockout</a></li>
-                    </ul>
-                </section>
-                <section class="nav-group collapsible">
-                    <input id="esxi" type="checkbox"/>
-                    <label for="esxi">ESXi Server</label>
-                    <ul class="nav-list">
-                        <li><a class="nav-link" href="#esxi-password-expiration">Password Expiration</a></li>
-                        <li><a class="nav-link" href="#esxi-password-complexity">Password Complexity</a></li>
-                        <li><a class="nav-link" href="#esxi-account-lockout">Account Lockout</a></li>
-                    </ul>
-                </section>
-            </section>
-            </nav>
-                <div class="content-area">
-                    <div class="content-area">'
-        $clarityCssNavigation
-    }
-
-    if ($reportType -eq "policy") { # Define the Clarity Cascading Style Sheets (CSS) for a Password Policy Report
-        $clarityCssNavigation = '
-                <nav class="subnav">
-                <ul class="nav">
-                <li class="nav-item">
-                    <a class="nav-link active" href="">Password Policy Report</a>
-                </li>
-                </ul>
-            </nav>
-            <div class="content-container">
-            <nav class="sidenav">
-            <section class="sidenav-content">
-                <section class="nav-group collapsible">
-                    <input id="expiration" type="checkbox"/>
-                    <label for="expiration">Password Expiration</label>
-                    <ul class="nav-list">
-                        <li><a class="nav-link" href="#sddcmanager-password-expiration">SDDC Manager</a></li>
-                        <li><a class="nav-link" href="#sso-password-expiration">vCenter Single Sign-On</a></li>
-                        <li><a class="nav-link" href="#vcenter-password-expiration">vCenter Server</a></li>
-                        <li><a class="nav-link" href="#vcenter-password-expiration-local">vCenter Server (Local)</a></li>
-                        <li><a class="nav-link" href="#nsxmanager-password-expiration">NSX Manager</a></li>
-                        <li><a class="nav-link" href="#nsxedge-password-expiration">NSX  Edge</a></li>
-                        <li><a class="nav-link" href="#esxi-password-expiration">ESXi</a></li>
-                    </ul>
-                </section>           
-                <section class="nav-group collapsible">
-                    <input id="complexity" type="checkbox"/>
-                    <label for="complexity">Password Complexity</label>
-                    <ul class="nav-list">
-                        <li><a class="nav-link" href="#sddcmanager-password-complexity">SDDC Manager</a></li>
-                        <li><a class="nav-link" href="#sso-password-complexity">vCenter Single Sign-On</a></li>
-                        <li><a class="nav-link" href="#vcenter-password-complexity-local">vCenter Server (Local)</a></li>
-                        <li><a class="nav-link" href="#nsxmanager-password-complexity">NSX Manager</a></li>
-                        <li><a class="nav-link" href="#nsxedge-password-complexity">NSX Edge</a></li>
-                        <li><a class="nav-link" href="#esxi-password-complexity">ESXi</a></li>
-                    </ul>
-                </section>
-                <section class="nav-group collapsible">
-                    <input id="lockout" type="checkbox"/>
-                    <label for="lockout">Account Lockout</label>
-                    <ul class="nav-list">
-                        <li><a class="nav-link" href="#sddcmanager-account-lockout">SDDC Manager</a></li>
-                        <li><a class="nav-link" href="#sso-account-lockout">vCenter Single Sign-On</a></li>
-                        <li><a class="nav-link" href="#vcenter-account-lockout-local">vCenter Server (Local)</a></li>
-                        <li><a class="nav-link" href="#nsxmanager-account-lockout">NSX Manager</a></li>
-                        <li><a class="nav-link" href="#nsxedge-account-lockout">NSX Edge</a></li>
-                        <li><a class="nav-link" href="#esxi-account-lockout">ESXi</a></li>
-                    </ul>
-                </section>
-            </section>
-            </nav>
-                <div class="content-area">
-                    <div class="content-area">'
         $clarityCssNavigation
     }
 
@@ -9490,77 +8521,6 @@ Function Format-StorageThreshold {
         Write-Error $_.Exception.Message
     }
 }
-
-Function Request-LocalUserExpiry {
-    <#
-        .SYNOPSIS
-        Check the expiry of a local OS user on the Linux-based appliance.
-
-        .DESCRIPTION
-        The Request-LocalUserExpiry cmdlet checks the expiry details of a local OS user on Linux-based appliance and
-        outputs the results.
-
-        .EXAMPLE
-        Request-LocalUserExpiry -fqdn sfo-vcf01.sfo.rainpole.io -rootPass VMw@re1! -component SDDC -checkUser backup
-        This example runs the command to check the expiration status of the local OS user named 'backup'.
-    #>
-
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$fqdn,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$rootPass,
-        [Parameter (Mandatory = $true)] [ValidateNotNullOrEmpty()] [String]$checkUser,
-        [Parameter (Mandatory = $true)] [ValidateSet("SDDC","vCenter","NSX Manager","NSX Edge","vRSLCM","vRLI","vROPS","vRA","WSA")] [String]$component
-    )
-
-    Try {
-        if (Get-VM -Name ($fqdn.Split(".")[0])) {
-            $command = 'chage -l ' + $checkUser
-            $output = Invoke-VMScript -VM ($fqdn.Split(".")[0]) -ScriptText $command -GuestUser root -GuestPassword $rootPass
-            $formatOutput = ($output.ScriptOutput -split '\r?\n').Trim()
-            $formatOutput = $formatOutput -replace '(^\s+|\s+$)', '' -replace '\s+', ' '
-
-            # Get the current date and expiration date
-            Add-Type  -AssemblyName  Microsoft.VisualBasic
-            $endDate = ($formatOutput[1] -Split (':'))[1].Trim()
-            if ($endDate -ne "never") {
-                $expiryDays = [math]::Ceiling((([DateTime]$endDate) - (Get-Date)).TotalDays)
-            }
-
-            # Set the alet for the local user account based on the expiry date
-            if ($endDate -eq "never") {
-                $alert = 'GREEN'
-                $message = "Password set to never expire. Verified using $command."
-            } else {
-                if ($expiryDays -le 15) {
-                    $alert = 'YELLOW'  # Warning: <= 15 days
-                    $message = "Password will expire in 15 or less days. Verified using $command."
-                }
-                if ($expiryDays -le 5) {
-                    $alert = 'RED'     # Critical: <= 5 days
-                    $message = "Password will expire in less than 5 days or has already expired. Verified using $command."
-                } else {
-                    $alert = 'GREEN'   # OK: > 15 days
-                    $message = "Password will not expire within the next 15 days. Verified using $command."
-                }
-            }
-
-            $userObject = New-Object -TypeName psobject
-            $userObject | Add-Member -notepropertyname 'Component' -notepropertyvalue $component
-            $userObject | Add-Member -notepropertyname 'Resource' -notepropertyvalue $fqdn
-            $userObject | Add-Member -notepropertyname 'User' -notepropertyvalue $checkUser
-            $userObject | Add-Member -notepropertyname 'Alert' -notepropertyvalue $alert
-            $userObject | Add-Member -notepropertyname 'Message' -notepropertyvalue $message
-            $userObject
-        } else {
-            Write-Error "Unable to locate virtual machine ($($fqdn.Split(".")[0])) in the vCenter Server inventory, check details"
-        }
-
-    }
-    Catch {
-        Write-Error $_.Exception.Message
-    }
-}
-Export-ModuleMember -Function Request-LocalUserExpiry
 
 ##############################  End Supporting Functions ###############################
 ########################################################################################
